@@ -4,8 +4,8 @@ class NasCQ {
     [string]$Name
     [String]$DisplayName
     
-    # Tenant domain in the following format: <"YourTenant".onmicrosoft.com>
-    [ValidatePattern('^*.onmicrosoft.com')]
+    # Tenant domain in the following format: <YourTenant.onmicrosoft.com> or <domain.com>
+    [ValidatePattern('^*.*')]
     [string]$TenantDomain
 
     # [OPTIONAL] Custom prefix for the call queue name
@@ -127,7 +127,7 @@ class NasAA {
     [String]$LanguageID
     [string]$TimeZoneId
 
-    [ValidatePattern('^*.onmicrosoft.com')]
+    [ValidatePattern('^*.*')]
     [string]$TenantDomain
     [string]$Prefix
     [guid]$GUID
@@ -264,7 +264,7 @@ Function Import-NasCQ {
         #[string]$Name,
 
         # Tenant domain in the following format: <"YourTenant".onmicrosoft.com>
-        [ValidatePattern('^*.onmicrosoft.com')]
+        [ValidatePattern('^*.*')]
         [string]$TenantDomain,
 
         # Call Queue data import
