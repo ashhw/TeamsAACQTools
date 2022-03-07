@@ -1708,6 +1708,7 @@ function Convert-NasImportMusicFile{
             $newFile = "$($OriginalFile.basename).mp3"
             Write-Verbose "Filename $newfile"
 
+            #Change file to string
             $OriginalFileString = $OriginalFile.tostring()
 
             Write-Verbose "Checking new file path: $OriginalCompletePath"
