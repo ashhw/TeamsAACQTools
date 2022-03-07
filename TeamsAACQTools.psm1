@@ -3,6 +3,9 @@ class NasCQ {
     # Call Queue Name without the 'Optional' prefix      
     [string]$Name
     [String]$DisplayName
+
+    #Custom input resource account name (What the end users will see when searching/calling in Teams)
+    [string]$ResourceAccName
     
     # Tenant domain in the following format: <YourTenant.onmicrosoft.com> or <domain.com>
     [ValidatePattern('^*.*')]
@@ -340,6 +343,7 @@ Function Import-NasCQ {
         $WelcomeMusicAudioFileID,$MusicOnHoldAudioFileID,$DisplayName = $null
         
         #Create the call queue objects from the Excel data input
+        $CQObj.ResourceAccName = $x.ResourceAccName
         $CQObj.Name = $x.Name
         $CQObj.CleanDisplayName()
         Write-Verbose "$InfoStringPrefix Special character check - New String: $($CQObj.DisplayName)"
@@ -558,14 +562,14 @@ function New-NasTeamsResourceAccount {
 
     if($CallQueue){
         $AppID = "11cd3e2e-fccb-42ad-ad00-878b93575e07"
-        $Prefix = "racq_"
-        $DisplayName = $CallQueue.DisplayName
+        $Prefix = "racq-cc-lll-"
+        $DisplayName = $CallQueue.ResourceAccName
         $TenantDomain = $CallQueue.TenantDomain
         $PhoneNumber = $CallQueue.PhoneNumber
     }else{
         $AppID = "ce933385-9390-45d1-9512-c8d228074e07"
-        $Prefix = "raaa_"
-        $DisplayName = $AutoAttendant.DisplayName
+        $Prefix = "raaa-cc-lll-"
+        $DisplayName = $AutoAttendant.ResourceAccName
         $TenantDomain = $AutoAttendant.TenantDomain
         $PhoneNumber = $AutoAttendant.PhoneNumber
     }
@@ -591,8 +595,8 @@ function New-NasTeamsResourceAccount {
             $RAAccount = "{0}{1}{2}@{3}" -f $($CallQueue.Prefix), $($DisplayName), $i, $($TenantDomain.Replace(" ",""))
         }else{
             $RAAccount = "{0}{1}{2}@{3}" -f $Prefix, $($DisplayName), $i, $($TenantDomain.Replace(" ",""))
-            # racq_ITsupport1@wardmanor.onmicrosoft.com
-            # racq_ITsupport2@wardmanor.onmicrosoft.com
+            # racq-cc-lll-ITsupport1@wardmanor.onmicrosoft.com
+            # racq-cc-lll-ITsupport2@wardmanor.onmicrosoft.com
         }
 
         #(Get-CsCallQueue -WarningAction SilentlyContinue).where({$_.identity -ne '0362bd89-d0d5-41a2-9564-8a184c8a084f'}) | % { $_.ApplicationInstances | % { Remove-CsOnlineApplicationInstanceAssociation -Identities  $_ }; $_ | Remove-CsCallQueue }
@@ -1195,7 +1199,15 @@ function Import-NasAACQData {
         [parameter()]
         [switch]$Interactive,
         [parameter()]
-        [string]$ffmpeglocation
+        [string]$ffmpeglocation,
+        [parameter()]
+        [string]$AARAPrefix,
+        [parameter()]
+        [string]$CQRAPrefix,
+        [parameter()]
+        [string]$TenantDomain,
+        [Parameter()]
+        [switch]$SkipAudio
     )
     
     #$rootFolder = "C:\Users\Ash Ward\OneDrive - Modality Systems\Documents\Chris\RgsImportExport"
@@ -1337,12 +1349,25 @@ function Import-NasAACQData {
             $LineURI = $_.LineUri
         }else{
             Write-Verbose "No line uri specified, setting value to null"
-            $LineURI = ""
+            $LineURI = $null
         }
+
+        # Let's create the 'cleaned' name, ready for the Teams import
+        Write-Verbose "Cleaning the imported name to remove special characters"
+        $CleanedWorkflowName = Remove-StringSpecialCharacter -String $_.Name
+
+        if(!($AARAPrefix)){
+            #Set the resource account prefix
+            $AARAPrefix = "raaa-cc-lll-"
+        }
+
+        $ResourceAccountUPN = "{0}{1}@{2}" -f $AARAPrefix, $CleanedWorkflowName, $($TenantDomain.Replace(" ",""))
 
         Write-Verbose "Configuring the workflow object: $($_.Name) - $($_.Identity.InstanceId.Guid)"
         [PSCustomObject]@{
             Identity = $_.Identity.InstanceId.Guid
+            ResourceAccountUPN = $ResourceAccountUPN
+            CleanedName = $CleanedWorkflowName
             Name = $_.Name
             PhoneNumber = $LineURI
             LanguageID = $_.Language
@@ -1624,8 +1649,23 @@ function Import-NasAACQData {
         Write-Verbose "Overflow action target? $OverflowActionUri"
         Write-Verbose "TImeout action target? $TimeoutActionUri"
 
+        # Let's create the 'cleaned' name, ready for the Teams import
+        Write-Verbose "Cleaning the imported name to remove special characters"
+        $CleanedQueueName = Remove-StringSpecialCharacter -String $x.Name
+
+        #If prefix is specified for bespoke requirements
+        if(!($CQRAPrefix)){
+            #Set the resource account prefix
+            $CQRAPrefix = "racq-cc-lll-"
+        }
+
+        #Build the resource account upn for bespoke requirements
+        $ResourceAccountUPN = "{0}{1}@{2}" -f $CQRAPrefix, $CleanedQueueName, $($TenantDomain.Replace(" ",""))
+
         $returncqobj = [PSCustomObject][ordered]@{
             QueueID = $x.Identity.InstanceId.Guid
+            ResourceAccountUPN = $ResourceAccountUPN
+            CleanedName = $CleanedQueueName
             Name = $x.Name
             RoutingMethod = $RoutingMethod
             PresenceBasedRouting = "N"
@@ -1667,8 +1707,13 @@ function Import-NasAACQData {
 
     Write-Verbose "Exports complete, location: $rootFolder\AACQDataImport.xlsx"
 
-    #Convert and export music files
-    Convert-NasImportMusicFile -rootfolder $rootfolder -ffmpegLocation $ffmpeglocation
+    if(!($SkipAudio)){
+        #Convert and export music files
+        Convert-NasImportMusicFile -rootfolder $rootfolder -ffmpegLocation $ffmpeglocation
+    }else{
+        Write-Verbose "-SkipAudio set, skipping audio conversion."
+    }
+
 }
 
 function Convert-NasImportMusicFile{
@@ -1686,10 +1731,14 @@ function Convert-NasImportMusicFile{
 
     # Lets loop through the NewMusicFolders, create the queue folders, convert the files and move them into the correct folder
     ForEach($musicid in $NewMusicFolders){
+
+        #Clear the last objects
+        $OriginalFile,$OriginalFileString,$OriginalPath,$newFile,$newFolderPath = $null
+
         # Check if the queue id music folder exists, if not, create it
         if(!(Test-Path -Path $rootfolder\audio\$($musicid.identity))){
             Write-Verbose "Creating audio folder: $rootfolder\audio\$($musicid.identity)"
-            $newFolderPath = "$rootfolder\audio\$($musicid.identity)\"
+            $newFolderPath = "$rootfolder\audio\$($musicid.identity)"
             New-Item -Path $newFolderPath -ItemType Directory
         }else{
             Write-Verbose "Folder $rootfolder\audio\$($musicid.identity) already exists"
@@ -1711,12 +1760,12 @@ function Convert-NasImportMusicFile{
             #Change file to string
             $OriginalFileString = $OriginalFile.tostring()
 
-            Write-Verbose "Checking new file path: $OriginalCompletePath"
             # Build the new file path
-            $OriginalCompletePath = "$OriginalPath\$OriginalFileString"
+            #$OriginalCompletePath = "$OriginalPath\$OriginalFileString"
+            Write-Verbose "Checking new file path: $OriginalFileString"
             
             # Execute ffmpeg to convert the file
-            & $ffmpegLocation -i $OriginalCompletePath $newFile
+            & $ffmpegLocation -i $OriginalFileString $newFile
             Write-Verbose "Original file name: $OriginalFileString"
             Write-Verbose "New file name: $newfile"
 
