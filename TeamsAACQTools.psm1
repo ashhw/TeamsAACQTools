@@ -920,8 +920,10 @@ function New-NasTeamsCallQueue {
                 Write-Verbose "Checking if the overflow target: $($CallQueue.OverflowActionTarget) is valid"
                 ####
                 if(($OverflowTargetCheck | Get-NASObjectGuid).objguid.guid){
-                    Write-Verbose "Overflow target is valid, setting to: $OverflowTargetCheck"
-                    $NewCQParameters.OverflowActionTarget = $OverflowTargetCheck
+                    $OverflowTargetGuid = ($OverflowTargetCheck | Get-NASObjectGuid).objguid.guid
+
+                    Write-Verbose "Overflow target is valid, setting to: $OverflowTargetGuid"
+                    $NewCQParameters.OverflowActionTarget = $OverflowTargetGuid
                     $NewCQParameters.OverflowAction = $CallQueue.OverflowAction
                 }else{
                     Write-Error "Overflow target: $OverflowTargetCheck doesn't exist/cannot find GUID."
@@ -975,8 +977,9 @@ function New-NasTeamsCallQueue {
                 Write-Verbose "Checking if the Timeout target: $TimeoutTargetCheck is valid"
                 ######
                 if(($TimeoutTargetCheck | Get-NASObjectGuid).objguid.guid){
-                    Write-Verbose "Overflow target is valid, setting to: $TimeoutTargetCheck"
-                    $NewCQParameters.TimeoutActionTarget = $TimeoutTargetCheck
+                    $TimeoutTargetGuid = ($TimeoutTargetCheck | Get-NASObjectGuid).objguid.guid
+                    Write-Verbose "Timeout target is valid, setting to: $TimeoutTargetCheck"
+                    $NewCQParameters.TimeoutActionTarget = $TimeoutTargetGuid
                     $NewCQParameters.TimeoutAction = $CallQueue.TimeoutAction
                 }else{
                     Write-Error "Timeout target: $TimeoutTargetCheck doesn't exist/cannot find GUID."
