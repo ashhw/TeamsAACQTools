@@ -343,7 +343,7 @@ Function Import-NasCQ {
         $WelcomeMusicAudioFileID,$MusicOnHoldAudioFileID,$DisplayName = $null
         
         #Create the call queue objects from the Excel data input
-        $CQObj.ResourceAccName = $x.ResourceAccName
+        $CQObj.ResourceAccName = $x.CleanedName
         $CQObj.Name = $x.Name
         $CQObj.CleanDisplayName()
         Write-Verbose "$InfoStringPrefix Special character check - New String: $($CQObj.DisplayName)"
@@ -1348,16 +1348,42 @@ function Import-NasAACQData {
             $LineURI = $null
         }
 
+        $_.Name = $_.Name.replace("_"," ")
+
         # Let's create the 'cleaned' name, ready for the Teams import
         Write-Verbose "Cleaning the imported name to remove special characters"
-        $CleanedWorkflowName = Remove-StringSpecialCharacter -String $_.Name
+        $CleanedWorkflowName = Remove-StringSpecialCharacter -String $_.Name -SpecialCharacterToKeep " "
 
         if(!($AARAPrefix)){
             #Set the resource account prefix
             $AARAPrefix = "raaa-cc-lll-"
         }
 
-        $ResourceAccountUPN = "{0}{1}@{2}" -f $AARAPrefix, $CleanedWorkflowName, $($TenantDomain.Replace(" ",""))
+        # Need to clean the display name and but keep spaces, resource accounts need spaces removing
+        $ResourceAccountUPN = "{0}{1}@{2}" -f $AARAPrefix, $($CleanedWorkflowName.Replace(" ","")), $($TenantDomain.Replace(" ",""))
+
+        # Take the cleaned workflow name and add spaces before every upper character except the 1st one
+        #$CleanedWorkflowNameWithSpaces = $CleanedWorkflowName[0]
+#
+        #$prevChar = $CleanedWorkflowName[0]
+#
+        ## Loop through the workflow name, character by character, skipping index 0
+        #for($i=1;$i -lt $CleanedWorkflowName.length;$i++){
+        #    # If the indexed character is upper, then add a space before
+        #    if([char]::IsUpper($CleanedWorkflowName[$i])){
+        #        if(!([char]::IsUpper($prevChar))){
+        #            $CleanedWorkflowNameWithSpaces+=" $($CleanedWorkflowName[$i])"
+        #        }else{
+        #            $CleanedWorkflowNameWithSpaces+=$CleanedWorkflowName[$i]
+        #        }
+        #        $prevChar = $CleanedWorkflowName[$i]
+        #    }else{
+        #        # Don't add a space if lower
+        #        $CleanedWorkflowNameWithSpaces+=$CleanedWorkflowName[$i]
+        #        $prevChar = $CleanedWorkflowName[$i]
+        #    }
+        #}
+        #Write-Verbose "Cleaned the queue name and added spaces for user friendly view: $CleanedWorkflowNameWithSpaces"
 
         Write-Verbose "Configuring the workflow object: $($_.Name) - $($_.Identity.InstanceId.Guid)"
         [PSCustomObject]@{
@@ -1549,6 +1575,7 @@ function Import-NasAACQData {
         
         $filterAgent = $AgentGroupsEdit.where({$_.identity -eq $x.agentgroupidlist.instanceid.guid})
 
+        #Null the vars
         $UseDefaultMusicOnHoldQueue,$CustomMusicOnHoldOriginalFileNameQueue,$CustomMusicOnHoldFilePathQueue = $null
 
         #Run if -Interactive is specified to let the user know what to do
@@ -1647,7 +1674,10 @@ function Import-NasAACQData {
 
         # Let's create the 'cleaned' name, ready for the Teams import
         Write-Verbose "Cleaning the imported name to remove special characters"
-        $CleanedQueueName = Remove-StringSpecialCharacter -String $x.Name
+
+        $x.name = $x.name.replace("_"," ")
+
+        $CleanedQueueName = Remove-StringSpecialCharacter -String $x.Name -SpecialCharacterToKeep " "
 
         #If prefix is specified for bespoke requirements
         if(!($CQRAPrefix)){
@@ -1656,7 +1686,30 @@ function Import-NasAACQData {
         }
 
         #Build the resource account upn for bespoke requirements
-        $ResourceAccountUPN = "{0}{1}@{2}" -f $CQRAPrefix, $CleanedQueueName, $($TenantDomain.Replace(" ",""))
+        $ResourceAccountUPN = "{0}{1}@{2}" -f $CQRAPrefix, $($CleanedQueueName.Replace(" ","")), $($TenantDomain.Replace(" ",""))
+
+        # Take the cleaned queue name and add spaces before every upper character except the 1st one
+        #$CleanedQueueNameWithSpaces = $CleanedQueueName[0]
+#
+        #$prevChar = $CleanedQueueName[0]
+#
+        ## Loop through the queue name, character by character, skipping index 0
+        #for($i=1;$i -lt $CleanedQueueName.length;$i++){
+        #    # If the indexed character is upper, then add a space before
+        #    if([char]::IsUpper($CleanedQueueName[$i])){
+        #        if(!([char]::IsUpper($prevChar))){
+        #            $CleanedQueueNameWithSpaces+=" $($CleanedQueueName[$i])"
+        #        }else{
+        #            $CleanedQueueNameWithSpaces+="$($CleanedQueueName[$i])"
+        #        }
+        #        $prevChar = $CleanedQueueName[$i]
+        #    }else{
+        #        # Don't add a space if lower
+        #        $CleanedQueueNameWithSpaces+=$CleanedQueueName[$i]
+        #        $prevChar = $CleanedQueueName[$i]
+        #    }
+        #}
+        #Write-Verbose "Cleaned the queue name and added spaces for user friendly view: $CleanedQueueNameWithSpaces"
 
         $returncqobj = [PSCustomObject][ordered]@{
             QueueID = $x.Identity.InstanceId.Guid
