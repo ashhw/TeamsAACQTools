@@ -624,9 +624,7 @@ function New-NasTeamsResourceAccount {
             Write-Warning "$InfoStringPrefix $RATypeAccountString $($RAAccount) - Account already exists, skipping to call queue creation."
             $CallQueue.ResourceAccount += $NewRA.objectID
         }
-        #if($CallQueue){
-        #    $CallQueue.ResourceAccount += $NewRA.objectID
-        #}
+
         $NewRA
         Get-PSSession | Where-Object name -like "SfBPowerShellSessionViaTeamsModule*" | Remove-PSSession 
         Write-Verbose "Clearing down PS Sessions to avoid session congestion"
@@ -929,11 +927,6 @@ function New-NasTeamsCallQueue {
                     Write-Error "Overflow target: $OverflowTargetCheck doesn't exist/cannot find GUID."
                 }
             }
-            #Only specify the OverflowActionTarget if it exists in the data
-            #if(($CallQueue.OverflowAction -eq "Forward" -or "Voicemail" -or "SharedVoicemail") -and ($CallQueue.OverflowActionTarget)){
-            #    Write-Verbose "Setting OverflowActionTarget: $($CallQueue.OverflowActionTarget)"
-            #    $NewCQParameters.OverflowActionTarget = $CallQueue.OverflowActionTarget
-            #}
             #Only specify the OverflowActionTarget if it exists in the data
             if($($CallQueue.OverflowAction) -eq "SharedVoicemail"){
                 Write-Verbose "Setting OverflowActionTarget: $($CallQueue.OverflowActionTarget)"
