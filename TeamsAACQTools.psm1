@@ -1718,6 +1718,7 @@ function Import-NasAACQData {
             Name = $x.Name
             RoutingMethod = $RoutingMethod
             PresenceBasedRouting = "N"
+            ConferenceMode = "Y"
             AgentAlertTime = $AgentAlertTime
             AllowOptOut = $AllowOptOut
             UseDefaultMusicOnHold = $UseDefaultMusicOnHoldQueue
