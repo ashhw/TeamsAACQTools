@@ -6,6 +6,10 @@ class NasCQ {
 
     #Custom input resource account name (What the end users will see when searching/calling in Teams)
     [string]$ResourceAccName
+
+    [string]$ResourceAccountUPN
+
+    [string]$CleanedRAName
     
     # Tenant domain in the following format: <YourTenant.onmicrosoft.com> or <domain.com>
     [ValidatePattern('^*.*')]
@@ -25,16 +29,19 @@ class NasCQ {
     [string]$WelcomeMusicAudioFileId
 
     # Specify $True for default music on hold
+    [ValidateSet('Y','N',$true,$false)]
     [string]$UseDefaultMusicOnHold
 
     # Agents to be added to the call queue
     [NasCQAgent[]]$Agents
 
     #Enable/disable presence based routing
-    [bool]$PresenceBasedRouting
+    [ValidateSet('Y','N',$true,$false)]
+    [string]$PresenceBasedRouting
 
     # Set $True or $False for agent opt out
-    [bool]$AllowOptOut
+    [ValidateSet('Y','N',$true,$false)]
+    [string]$AllowOptOut
 
     # Agent alert time in seconds
     [int]$AgentAlertTime
@@ -78,16 +85,19 @@ class NasCQ {
     [string]$ChannelUserObjectId
 
     # Enable/disable conference mode
-    [bool]$ConferenceMode
+    [ValidateSet('Y','N',$true,$false)]
+    [string]$ConferenceMode
 
     # lets you add all the members of the distribution lists to the Call Queue. Use the DL GUID.
     [string[]]$DistributionLists
 
     # Turn on transcription for voicemails left by a caller on overflow
-    [bool]$EnableOverflowSharedVoicemailTranscription
+    [ValidateSet('Y','N',$true,$false)]
+    [string]$EnableOverflowSharedVoicemailTranscription = 'N'
 
     # Turn on transcription for voicemails left by a caller on timeout
-    [bool]$EnableTimeoutSharedVoicemailTranscription
+    [ValidateSet('Y','N',$true,$false)]
+    [string]$EnableTimeoutSharedVoicemailTranscription = 'N'
 
     # Indicates the language that is used to play shared voicemail prompts
     [string]$LanguageID
@@ -340,13 +350,25 @@ Function Import-NasCQ {
         $CQObj = [NasCQ]::new()
 
         #Need to clear these variables
-        $WelcomeMusicAudioFileID,$MusicOnHoldAudioFileID,$DisplayName = $null
+        $WelcomeMusicAudioFileID,$MusicOnHoldAudioFileID,$DisplayName,$EnableOverflowSharedVoicemailTranscription = $null
         
+        if($x.EnableOverflowSharedVoicemailTranscription -eq "Y"){
+            $EnableOverflowSharedVoicemailTranscription = $x.EnableOverflowSharedVoicemailTranscription
+        }else{
+            $EnableOverflowSharedVoicemailTranscription = "N"
+        }
+        
+        if($x.EnableTimeoutSharedVoicemailTranscription -eq "Y"){
+            $EnableTimeoutSharedVoicemailTranscription = $x.EnableTimeoutSharedVoicemailTranscription
+        }else{
+            $EnableTimeoutSharedVoicemailTranscription = "N"
+        }
+
+
         #Create the call queue objects from the Excel data input
-        $CQObj.ResourceAccName = $x.CleanedName
+        $CQObj.ResourceAccountUPN = $x.ResourceAccountUPN
+        $CQObj.CleanedRAName = $x.CleanedName
         $CQObj.Name = $x.Name
-        $CQObj.CleanDisplayName()
-        Write-Verbose "$InfoStringPrefix Special character check - New String: $($CQObj.DisplayName)"
         $CQObj.Prefix = $x.Prefix
         $CQObj.TenantDomain = $($TenantDomain)
         $CQObj.LanguageID = $x.LanguageID
@@ -363,13 +385,13 @@ Function Import-NasCQ {
         $CQObj.OverflowThreshold = $x.OverflowThreshold
         $CQObj.OverflowAction = $x.OverflowAction
         $CQObj.OverflowActionTarget = $x.OverflowActionTarget
-        $CQObj.EnableOverflowSharedVoicemailTranscription = $x.EnableOverflowSharedVoicemailTranscription
+        $CQObj.EnableOverflowSharedVoicemailTranscription = $EnableOverflowSharedVoicemailTranscription
         $CQObj.OverflowSharedVoicemailAudioFilePrompt = $x.OverflowSharedVoicemailAudioFilePrompt
         $CQObj.OverflowSharedVoicemailTextToSpeechPrompt = $x.OverflowSharedVoicemailTextToSpeechPrompt
         $CQObj.TimeoutThreshold = $x.TimeoutThreshold
         $CQObj.TimeoutAction = $x.TimeoutAction
         $CQObj.TimeoutActionTarget = $x.TimeoutActionTarget
-        $CQObj.EnableTimeoutSharedVoicemailTranscription = $x.EnableTimeoutSharedVoicemailTranscription
+        $CQObj.EnableTimeoutSharedVoicemailTranscription = $EnableTimeoutSharedVoicemailTranscription
         $CQObj.TimeoutSharedVoicemailAudioFilePrompt = $x.TimeoutSharedVoicemailAudioFilePrompt
         $CQObj.TimeoutSharedVoicemailTextToSpeechPrompt = $x.TimeoutSharedVoicemailTextToSpeechPrompt
         $CQObj.MusicOnHoldAudioFilePath = $x.MusicOnHoldAudioFilePath
@@ -394,45 +416,70 @@ Function Import-NasCQ {
 
         #Create the call queues only if the parameter is specified, otherwise only import to the object
         if(!($NoCreateCQ)){
-                if(!(Get-CsCallQueue -NameFilter "$($CQObj.DisplayName)")){
+                if(!(Get-CsCallQueue -NameFilter "$($CQObj.Name)")){
                     Write-Verbose "$InfoStringPrefix $CQTypeAccountString Call Queue doesn't exist: $($x.Name). Creating the call queue."
                     #Call the New-NasTeamsCallQueue function to create the call queue
                     $CallQueue = $null
                     $CallQueue = New-NasTeamsCallQueue -CallQueue $CQObj 
                     if(!($NoRAAssociation)){
-                        Write-Verbose "$InfoStringPrefix $CQTypeAccountString Call Queue: $($CQObj.Displayname) created, associating the resource account $($ResourceAccount.UserPrincipalName)"
+                        Write-Verbose "$InfoStringPrefix $CQTypeAccountString Call Queue: $($CQObj.Name) created, associating the resource account $($ResourceAccount.UserPrincipalName)"
                         $RAAssociation = $null
                         $RAAssociation = New-NasTeamsResourceAccountAssociation -CallQueue $CallQueue -ResourceAccountObjectID $ResourceAccount.ObjectID -ErrorAction Stop
-                        Write-Verbose "$InfoStringPrefix $RATypeAccountString Resource account $($ResourceAccount.UserPrincipalName) has now been associated to $($CQObj.Displayname)"
+                        Write-Verbose "$InfoStringPrefix $RATypeAccountString Resource account $($ResourceAccount.UserPrincipalName) has now been associated to $($CQObj.Name)"
                     }else{
                         Write-Verbose "$InfoStringPrefix $RATypeAccountString `$NoRAAssociation specified, skipping resource account association"
                     }
                     #Return Callqueue object
                     $CallQueue
                 }else{
-                    $CallQueue = Get-CsCallQueue -NameFilter "$($CQObj.DisplayName)"
-                    Write-Warning "$InfoStringPrefix $CQTypeAccountString Call Queue already exists: $($x.Name) exists as $($CQObj.DisplayName). Checking resource account association."
+                    $CallQueue = $null
+                    $CallQueue = Get-CsCallQueue -NameFilter "$($CQObj.Name)"
+                    Write-Warning "$InfoStringPrefix $CQTypeAccountString Call Queue already exists: $($x.Name) exists as $($CQObj.Name). Checking resource account association."
                     if(!($NoRAAssociation)){
                         if(!(Get-CsOnlineApplicationInstanceAssociation -Identity $ResourceAccount.ObjectID -ErrorAction SilentlyContinue)){
                             Write-Verbose "$InfoStringPrefix $RATypeAccountString Resource account $($ResourceAccount.UserPrincipalName) not associated"
                             $RAAssociation = $null
                             $RAAssociation = New-NasTeamsResourceAccountAssociation -CallQueue $CallQueue -ResourceAccountObjectID $ResourceAccount.ObjectID -ErrorAction Stop
-                            Write-Verbose "$InfoStringPrefix $RATypeAccountString Resource account $($ResourceAccount.UserPrincipalName) has now been associated to $($CQObj.Displayname)"
+                            Write-Verbose "$InfoStringPrefix $RATypeAccountString Resource account $($ResourceAccount.UserPrincipalName) has now been associated to $($CQObj.Name)"
                         }else{
-                            Write-Verbose "$InfoStringPrefix $CQTypeAccountString $($CQObj.Displayname) - Already associated with the following resource account $($ResourceAccount.UserPrincipalName)"
+                            Write-Verbose "$InfoStringPrefix $CQTypeAccountString $($CQObj.Name) - Already associated with the following resource account $($ResourceAccount.UserPrincipalName)"
                         }
                     }else{
                         Write-Verbose "$InfoStringPrefix $RATypeAccountString `$NoRAAssociation specified, skipping resource account association"
                     }
                 }
         }else{
-            Write-Verbose "$InfoStringPrefix Call Queue imported to memory: $($CQObj.DisplayName)"
+            Write-Verbose "$InfoStringPrefix Call Queue imported to memory: $($CQObj.Name)"
             $CQObj
         }
     } # End import ForEach($x in $CQDataImport)
 
     #Stop-Transcript
     Write-Host "Call queue build completed, please refer to the transcript file for any errors."
+}
+
+function Get-NASTeamsLanguages {
+
+    param (
+        [Parameter(ValueFromPipeline)]
+        [String]$rootFolder
+    )
+
+    $TeamsLanguages = [PSCustomObject]@{
+        LanguageID = "ar-EG","ca-ES","da-DK","de-DE","en-AU","en-CA","en-GB","en-IN","en-US",
+        "es-ES","es-MX","fi-FI","fr-CA","fr-FR","it-IT","ja-JP","ko-KR","nb-NO","nl-NL","pl-PL",
+        "pt-PT","pt-BR","ru-RU","sv-SE","zh-CN","zh-HK","zh-TW","tr-TR","cs-CZ","th-TH","el-GR",
+        "hu-HU","sk-SK","hr-HR","sl-SI","id-ID","ro-RO","vi-VN"
+        Name = "Arabic (Egypt)","Catalan (Catalan)","Danish (Denmark)","German (Germany)","English (Australia)",
+        "English (Canada)","English (United Kingdom)","English (India)","English (United States)","Spanish (Spain)",
+        "Spanish (Mexico)","Finnish (Finland)","French (Canada)","French (France)","Italian (Italy)","Japanese (Japan)",
+        "Korean (Korea)","Norwegian, BokmÃ¥l (Norway)","Dutch (Netherlands)","Polish (Poland)","Portuguese (Portugal)",
+        "Portuguese (Brazil)","Russian (Russia)","Swedish (Sweden)","Chinese (Simplified, PRC)","Chinese (Traditional, Hong Kong S.A.R.)",
+        "Chinese (Traditional, Taiwan)","Turkish (Turkey)","Turkish (Turkey)","Thai (Thai)","Greek (Greek)","Hungarian (Hungary)",
+        "Slovak (Slovakia)","Croatian (Croatia)","Slovenian (Slovenia)","Indonesian (Indonesia)","Romanian (Romania)","Vietnamese (Vietnam)"
+    }
+
+    $TeamsLanguages | Sort-Object LanguageID | Export-Excel -Path "$rootFolder\AACQDataImport.xlsx" -WorksheetName "Languages" -NoNumberConversion "Name" -BoldTopRow -AutoSize
 }
 
 function Get-NASAgentGuid {
@@ -562,15 +609,15 @@ function New-NasTeamsResourceAccount {
 
     if($CallQueue){
         $AppID = "11cd3e2e-fccb-42ad-ad00-878b93575e07"
-        $Prefix = "racq-cc-lll-"
-        $DisplayName = $CallQueue.ResourceAccName
-        $TenantDomain = $CallQueue.TenantDomain
+        #$Prefix = "racq-cc-lll-"
+        $DisplayName = $CallQueue.CleanedRAName
+        #$TenantDomain = $CallQueue.TenantDomain
         $PhoneNumber = $CallQueue.PhoneNumber
     }else{
         $AppID = "ce933385-9390-45d1-9512-c8d228074e07"
-        $Prefix = "raaa-cc-lll-"
-        $DisplayName = $AutoAttendant.ResourceAccName
-        $TenantDomain = $AutoAttendant.TenantDomain
+        #$Prefix = "raaa-cc-lll-"
+        $DisplayName = $AutoAttendant.CleanedRAName
+        #$TenantDomain = $AutoAttendant.TenantDomain
         $PhoneNumber = $AutoAttendant.PhoneNumber
     }
     
@@ -580,7 +627,7 @@ function New-NasTeamsResourceAccount {
     $RATypeAccountString = ":: RESOURCE ACCOUNT ::"
 
     $i = 0
-    $RAAccount = $null
+    $RAAccountUPN = $null
     # we are doing this to prevent an error in foreach when the user hasn't provided an phone number, so we create a dummy value
     if(!($PhoneNumber)){$PhoneNumber = ""}
     $PhoneNumber | ForEach-Object {
@@ -591,37 +638,39 @@ function New-NasTeamsResourceAccount {
         }
         
         #Lets build the resource account UPN
-        if($CallQueue.Prefix){
-            $RAAccount = "{0}{1}{2}@{3}" -f $($CallQueue.Prefix), $($DisplayName), $i, $($TenantDomain.Replace(" ",""))
-        }else{
-            $RAAccount = "{0}{1}{2}@{3}" -f $Prefix, $($DisplayName), $i, $($TenantDomain.Replace(" ",""))
-            # racq-cc-lll-ITsupport1@wardmanor.onmicrosoft.com
-            # racq-cc-lll-ITsupport2@wardmanor.onmicrosoft.com
-        }
+        #if($CallQueue.Prefix){
+        #    $RAAccountUPN = "{0}{1}{2}@{3}" -f $($CallQueue.Prefix), $($DisplayName), $i, $($TenantDomain.Replace(" ",""))
+        #}else{
+        #    $RAAccountUPN = "{0}{1}{2}@{3}" -f $Prefix, $DisplayName, $i, $($TenantDomain.Replace(" ",""))
+        #    # racq-cc-lll-ITsupport1@wardmanor.onmicrosoft.com
+        #    # racq-cc-lll-ITsupport2@wardmanor.onmicrosoft.com
+        #}
+
+        $RAAccountUPN = $CallQueue.ResourceAccountUPN
 
         #(Get-CsCallQueue -WarningAction SilentlyContinue).where({$_.identity -ne '0362bd89-d0d5-41a2-9564-8a184c8a084f'}) | % { $_.ApplicationInstances | % { Remove-CsOnlineApplicationInstanceAssociation -Identities  $_ }; $_ | Remove-CsCallQueue }
 
-        $NewRA = Get-CsOnlineApplicationInstance -Identity $RAAccount -ErrorAction SilentlyContinue
+        $NewRA = Get-CsOnlineApplicationInstance -Identity $RAAccountUPN -ErrorAction SilentlyContinue
         if(!($NewRA)){
-                Write-Verbose "$($InfoStringPrefix) $($RATypeAccountString) $($RAAccount) - Account doesn't exist, moving to creation."
+                Write-Verbose "$($InfoStringPrefix) $($RATypeAccountString) $($RAAccountUPN) - Account doesn't exist, moving to creation."
                 # Create resource account of call queue type
                 $RAParameters = @{
-                    UserPrincipalName = $RAAccount
-                    ApplicationId = "$($AppID)"
-                    DisplayName = "$($DisplayName)$i"
+                    UserPrincipalName = $RAAccountUPN
+                    ApplicationId = $AppID
+                    DisplayName = "$DisplayName"
                 }
                 $NewRA = New-CsOnlineApplicationInstance @RAParameters
-                Write-Verbose "$InfoStringPrefix $RATypeAccountString $($RAAccount) - Account has now been created."
+                Write-Verbose "$InfoStringPrefix $RATypeAccountString $($RAAccountUPN) - Account has now been created."
 
-                #Write-Verbose "$InfoStringPrefix $RATypeAccountString $($RAAccount) - Account is available for use, moving to call queue checks."
+                #Write-Verbose "$InfoStringPrefix $RATypeAccountString $($RAAccountUPN) - Account is available for use, moving to call queue checks."
                 if($CallQueue){
                     $CallQueue.ResourceAccount += $NewRA.objectID
                 }
 
         #The Resource Account exists, skip to creating the call queue    
         }Else{
-            #$NewRA = Get-CsOnlineApplicationInstance -Identity $RAAccount
-            Write-Warning "$InfoStringPrefix $RATypeAccountString $($RAAccount) - Account already exists, skipping to call queue creation."
+            #$NewRA = Get-CsOnlineApplicationInstance -Identity $RAAccountUPN
+            Write-Warning "$InfoStringPrefix $RATypeAccountString $($RAAccountUPN) - Account already exists, skipping to call queue creation."
             $CallQueue.ResourceAccount += $NewRA.objectID
         }
 
@@ -654,13 +703,40 @@ function New-NasTeamsResourceAccountAssociation{
     #PS7 only
     #$ConfigurationType = ($CallQueue) ? 'CallQueue' : 'AutoAttendant'
 
-    $NewCQAppInstanceParameters = @{
-        Identities = $ResourceAccountObjectID
-        ConfigurationId = $CallQueue.Identity
-        ConfigurationType = $ConfigurationType
-        ErrorAction = 'Stop'
+    $i = $null
+    $i = 0
+    while (!(Get-CsOnlineApplicationInstance -Identities $ResourceAccountObjectID)) {
+        Write-Verbose "Resource account: $ResourceAccountObjectID is not ready yet"
+        if($i -gt 5){
+            Write-Error "ERROR ::: Resource account: $ResourceAccountObjectID is not available for use yet. Please try again later."
+            break
+        }else{
+            Write-Verbose "Looping back round to check if the resource account is ready."
+        }
+        $i++
     }
-    New-CsOnlineApplicationInstanceAssociation @NewCQAppInstanceParameters
+    Write-Verbose "Resource account: $ResourceAccountObjectID available, moving on."
+
+    if(($CallQueue | gm)[0].typename -eq "NasCQ"){
+        $RAConfigurationID = $CallQueue.Guid.Guid
+    }else{
+        $RAConfigurationID = $CallQueue.Identity
+    }
+ 
+
+    if(Get-CsOnlineApplicationInstance -Identities $ResourceAccountObjectID){
+        $NewCQAppInstanceParameters = @{
+            Identities = $ResourceAccountObjectID
+            ConfigurationId = $RAConfigurationID
+            ConfigurationType = $ConfigurationType
+            ErrorAction = 'Stop'
+        }
+        New-CsOnlineApplicationInstanceAssociation @NewCQAppInstanceParameters -ErrorAction Stop
+    }else{
+        Write-Error "Resource account: $ResourceAccountObjectID cannot be associated. Terminating script."
+        break
+    }
+
 }
 
 function New-NasTeamsCallQueue {
@@ -693,34 +769,34 @@ function New-NasTeamsCallQueue {
     $errorStringPrefix = "[ERROR]"
     $InfoStringPrefix = "[INFO]"
     $CQTypeAccountString = ":: CALL QUEUE ::"
-    $CustomCQSuffix = "CQ"
+    #$CustomCQSuffix = "CQ"
 
     #Path used for music based on excel file location
     $rootPath = $CQData | Split-Path -Parent
 
-    Write-Verbose "$InfoStringPrefix $CQTypeAccountString $($CallQueue.Displayname) - Checking if the call queue exists."
+    Write-Verbose "$InfoStringPrefix $CQTypeAccountString $($CallQueue.Name) - Checking if the call queue exists."
 
     #Check if the call queue already exists, if it doesn't, then create the call queue
-    if(!(Get-CsCallQueue -NameFilter "$($CallQueue.Displayname)")){
+    if(!(Get-CsCallQueue -NameFilter "$($CallQueue.Name)")){
 
-        Write-Verbose "$InfoStringPrefix $CQTypeAccountString $($CallQueue.Displayname) - Call queue doesn't exist, moving to creation."
+        Write-Verbose "$InfoStringPrefix $CQTypeAccountString $($CallQueue.Name) - Call queue doesn't exist, moving to creation."
 
         ## Audio file checks and uploads
         #Check if the WelcomeMusic has been specified in the data.
         if($CallQueue.WelcomeMusicAudioFilePath){
-            Write-Verbose "$InfoStringPrefix $CQTypeAccountString $($CallQueue.Displayname) :: WelcomeMusic audio file found, checking path $rootPath$($CallQueue.WelcomeMusicAudioFilePath) exists."
+            Write-Verbose "$InfoStringPrefix $CQTypeAccountString $($CallQueue.Name) :: WelcomeMusic audio file found, checking path $rootPath$($CallQueue.WelcomeMusicAudioFilePath) exists."
             # Test the path, ensure it can be reached
             try {
                 $PathTest = Test-Path -Path $rootPath$($CallQueue.WelcomeMusicAudioFilePath) -ErrorAction Stop
             }
             catch {
-                throw "$errorStringPrefix $CQTypeAccountString $($CallQueue.Displayname) :: Path error: $rootPath$($CallQueue.WelcomeMusicAudioFilePath) not found/unreachable."
+                throw "$errorStringPrefix $CQTypeAccountString $($CallQueue.Name) :: Path error: $rootPath$($CallQueue.WelcomeMusicAudioFilePath) not found/unreachable."
             }
 
             # Path returns true, therefore import and upload the file
             if($PathTest){
                 #Generate random filename for audio file
-                $WelcomeMusicFilename = "WelcomeMusic" + $CallQueue.Displayname + (Get-Random -Minimum 1 -Maximum 1000) + ".mp3"
+                $WelcomeMusicFilename = "WelcomeMusic" + $CallQueue.Name + (Get-Random -Minimum 1 -Maximum 1000) + ".mp3"
 
                 #Lets create duplicate file
                 #Build the filename path
@@ -732,8 +808,8 @@ function New-NasTeamsCallQueue {
 
                 #Get the audio file from the path
                 $WelcomeMusicAudioFileContent = Get-Content -Path $WelcomeMusicCopyFilename -AsByteStream -ReadCount 0
-                Write-Verbose "$InfoStringPrefix $CQTypeAccountString $($CallQueue.Displayname) :: Path exists: WelcomeMusic audio file $rootPath$($CallQueue.WelcomeMusicAudioFilePath)"
-                Write-Verbose "$InfoStringPrefix $CQTypeAccountString $($CallQueue.Displayname) :: WelcomeMusic audio file $rootPath$($CallQueue.WelcomeMusicAudioFilePath) imported."
+                Write-Verbose "$InfoStringPrefix $CQTypeAccountString $($CallQueue.Name) :: Path exists: WelcomeMusic audio file $rootPath$($CallQueue.WelcomeMusicAudioFilePath)"
+                Write-Verbose "$InfoStringPrefix $CQTypeAccountString $($CallQueue.Name) :: WelcomeMusic audio file $rootPath$($CallQueue.WelcomeMusicAudioFilePath) imported."
 
                 # Import the audio file into Teams
                 $WelcomeMusicAudioFile = Import-CsOnlineAudioFile -ApplicationId "HuntGroup" -FileName $WelcomeMusicFilename -Content $WelcomeMusicAudioFileContent  
@@ -744,30 +820,30 @@ function New-NasTeamsCallQueue {
                 Write-Verbose "Removing audio file copy: $WelcomeMusicCopyFilename"
                 Remove-Item -Path $WelcomeMusicCopyFilename
 
-                Write-Verbose "$InfoStringPrefix $CQTypeAccountString $($CallQueue.Displayname) :: WelcomeMusic audio file uploaded to Teams. ID: $($WelcomeMusicAudioFileID)"
+                Write-Verbose "$InfoStringPrefix $CQTypeAccountString $($CallQueue.Name) :: WelcomeMusic audio file uploaded to Teams. ID: $($WelcomeMusicAudioFileID)"
             } else {
-                Write-Error "$errorStringPrefix $CQTypeAccountString $($CallQueue.Displayname) :: WelcomeMusic file path $rootPath$($CallQueue.WelcomeMusicAudioFilePath) unreachable."
+                Write-Error "$errorStringPrefix $CQTypeAccountString $($CallQueue.Name) :: WelcomeMusic file path $rootPath$($CallQueue.WelcomeMusicAudioFilePath) unreachable."
             }
 
         }
 
         #Check if the MusicOnHold has been specified in the data.
         if($CallQueue.MusicOnHoldAudioFilePath){
-            Write-Verbose "$InfoStringPrefix $CQTypeAccountString $($CallQueue.Displayname) :: MusicOnHold audio file found, checking path $rootPath$($CallQueue.MusicOnHoldAudioFilePath) exists."
+            Write-Verbose "$InfoStringPrefix $CQTypeAccountString $($CallQueue.Name) :: MusicOnHold audio file found, checking path $rootPath$($CallQueue.MusicOnHoldAudioFilePath) exists."
             # Test the path, ensure it can be reached
             try {
                 $PathTest = Test-Path -Path "$rootPath$($CallQueue.MusicOnHoldAudioFilePath)" -ErrorAction Stop
                 Write-Verbose "Checking path exists: $rootPath$($CallQueue.MusicOnHoldAudioFilePath)"
             }
             catch {
-                throw "$errorStringPrefix $CQTypeAccountString $($CallQueue.Displayname) :: Path error: $rootPath$($CallQueue.MusicOnHoldAudioFilePath) not found/unreachable."
+                throw "$errorStringPrefix $CQTypeAccountString $($CallQueue.Name) :: Path error: $rootPath$($CallQueue.MusicOnHoldAudioFilePath) not found/unreachable."
             }
             
             # Path returns true, therefore import and upload the file
             if($PathTest){
                 Write-Verbose "Path exists: $rootPath$($CallQueue.MusicOnHoldAudioFilePath)"
                 #Generate random filename for audio file
-                $MusicOnHoldFilename = "MusicOnHold" + $CallQueue.Displayname + (Get-Random -Minimum 1 -Maximum 1000) + ".mp3"
+                $MusicOnHoldFilename = "MusicOnHold" + $CallQueue.Name + (Get-Random -Minimum 1 -Maximum 1000) + ".mp3"
 
                 #Lets create duplicate file
                 #Build the filename path
@@ -779,8 +855,8 @@ function New-NasTeamsCallQueue {
 
                 #Get the audio file from the path
                 $MusicOnHoldAudioFileContent = Get-Content -Path $MusicOnHoldCopyFilename -AsByteStream -ReadCount 0
-                Write-Verbose "$InfoStringPrefix $CQTypeAccountString $($CallQueue.Displayname) :: Path exists: MusicOnHold audio file $($MusicOnHoldCopyFilename)"
-                Write-Verbose "$InfoStringPrefix $CQTypeAccountString $($CallQueue.Displayname) :: MusicOnHold audio file $($MusicOnHoldCopyFilename) imported."
+                Write-Verbose "$InfoStringPrefix $CQTypeAccountString $($CallQueue.Name) :: Path exists: MusicOnHold audio file $($MusicOnHoldCopyFilename)"
+                Write-Verbose "$InfoStringPrefix $CQTypeAccountString $($CallQueue.Name) :: MusicOnHold audio file $($MusicOnHoldCopyFilename) imported."
 
                 # Import the audio file into Teams
                 $MusicOnHoldAudioFile = Import-CsOnlineAudioFile -ApplicationId "HuntGroup” -FileName $MusicOnHoldFilename -Content $MusicOnHoldAudioFileContent
@@ -791,9 +867,9 @@ function New-NasTeamsCallQueue {
                 Write-Verbose "Removing audio file copy: $MusicOnHoldCopyFilename"
                 Remove-Item -Path $MusicOnHoldCopyFilename
 
-                Write-Verbose "$InfoStringPrefix $CQTypeAccountString $($CallQueue.Displayname) :: MusicOnHold audio file uploaded to Teams. ID: $($MusicOnHoldAudioFileID)"
+                Write-Verbose "$InfoStringPrefix $CQTypeAccountString $($CallQueue.Name) :: MusicOnHold audio file uploaded to Teams. ID: $($MusicOnHoldAudioFileID)"
             } else {
-                Write-Error "$errorStringPrefix $CQTypeAccountString $($CallQueue.Displayname) :: MusicOnHold file path $rootPath$($CallQueue.MusicOnHoldAudioFilePath) unreachable."
+                Write-Error "$errorStringPrefix $CQTypeAccountString $($CallQueue.Name) :: MusicOnHold file path $rootPath$($CallQueue.MusicOnHoldAudioFilePath) unreachable."
             }
 
         }
@@ -801,12 +877,12 @@ function New-NasTeamsCallQueue {
         # Create call queue
         $NewCQParameters = @{}
 
-        Write-Verbose "Setting Name: $($CallQueue.Displayname) $($CustomCQSuffix)"
-        $NewCQParameters.Name = "$($CallQueue.Displayname) $($CustomCQSuffix)"
+        Write-Verbose "Setting Call Queue Name: $($CallQueue.Name)"
+        $NewCQParameters.Name = $CallQueue.Name
 
         # - Ash Ward 2022/02/16 - Need to create this due to the New-CsCallQueue cmdlet requiring the ObjectID and not the UPN
         #Only specify users if it exists in the data
-        if($CallQueue.Agents.AgentGuid){
+        if($CallQueue.Agents.AgentUPN){
             # Agents
             # Get the GUIDs for each Agent
             $agents = ($x.Agents.split(",") | Get-NASAgentGuid)
@@ -863,26 +939,26 @@ function New-NasTeamsCallQueue {
         #Check the data for a N and specify false in the object
         if($CallQueue.AllowOptOut -eq "N"){
             Write-Verbose "Setting Allow Opt Out: $($CallQueue.AllowOptOut)"
-            $NewCQParameters.AllowOptOut = $CallQueue.AllowOptOut = $False
+            $NewCQParameters.AllowOptOut = $False
         }else{
             Write-Verbose "Setting Allow Opt Out: $($CallQueue.AllowOptOut)"
-            $NewCQParameters.AllowOptOut = $CallQueue.AllowOptOut = $True
+            $NewCQParameters.AllowOptOut = $True
         }
 
         #Check the data for a N and specify false in the object
         if($CallQueue.ConferenceMode -eq "N"){
             Write-Verbose "Setting Conference Mode: $($CallQueue.ConferenceMode)"
-            $NewCQParameters.ConferenceMode = $CallQueue.ConferenceMode = $False
+            $NewCQParameters.ConferenceMode = 0
         }else{
             Write-Verbose "Setting Conference Mode: $($CallQueue.ConferenceMode)"
-            $NewCQParameters.ConferenceMode = $CallQueue.ConferenceMode = $True
+            $NewCQParameters.ConferenceMode = 1
         }
 
         #Only specify custom MusicOnHold if it exists in the data
         if((-not [string]::IsNullOrEmpty($CallQueue.MusicOnHoldAudioFilePath)) -and ($CallQueue.UseDefaultMusicOnHold -eq "N")){
             Write-Verbose "Setting custom music on hold"
-            Write-verbose $CallQueue.MusicOnHoldAudioFilePath
-            Write-Verbose $CallQueue.UseDefaultMusicOnHold
+            Write-verbose "Music on hold file path: $($CallQueue.MusicOnHoldAudioFilePath)"
+            Write-Verbose "Setting use default music on hold to: $($CallQueue.UseDefaultMusicOnHold)"
             $NewCQParameters.MusicOnHoldAudioFileId = $MusicOnHoldAudioFileId
             $NewCQParameters.UseDefaultMusicOnHold = $False
         }else{
@@ -1010,9 +1086,9 @@ function New-NasTeamsCallQueue {
         }
 
         #Create the call queue from the above parameters
-        $NewCallQueue = New-CsCallQueue @NewCQParameters
+        $NewCallQueue = New-CsCallQueue @NewCQParameters -ErrorAction Stop
 
-        Write-Verbose "TESTING SET: Setting TATarget: $($NewCQParameters.TimeoutActionTarget) Setting OATarget: $($NewCQParameters.OverflowActionTarget)"
+        Write-Verbose "Setting Timeout Target: $($NewCQParameters.TimeoutActionTarget) Setting Overflow Target: $($NewCQParameters.OverflowActionTarget)"
 
         if($NewCQParameters.TimeoutActionTarget){
             Write-Verbose "Setting timeout action target: $($NewCQParameters.TimeoutActionTarget)"
@@ -1027,14 +1103,14 @@ function New-NasTeamsCallQueue {
             Write-Verbose "No need to set overflow action target, no result"
         }
         
-        Write-Verbose "$InfoStringPrefix $CQTypeAccountString $($CallQueue.Displayname) - Call queue has now been created."
+        Write-Verbose "$InfoStringPrefix $CQTypeAccountString $($CallQueue.Name) - Call queue has now been created."
         #Pass the call queue ObjectID back to the GUID of the call queue object
         $CallQueue.guid = $NewCallQueue.Identity
     }else{
 
         #The call queue exists, skip to associating the resource account 
-        $NewCallQueue = Get-CsCallQueue -NameFilter "$($CallQueue.Displayname)"
-        Write-Verbose "$InfoStringPrefix $CQTypeAccountString $($CallQueue.Displayname) - Call queue already exists, skipping to resource account association."
+        $NewCallQueue = Get-CsCallQueue -NameFilter "$($CallQueue.Name)"
+        Write-Verbose "$InfoStringPrefix $CQTypeAccountString $($CallQueue.Name) - Call queue already exists, skipping to resource account association."
         $CallQueue.guid = $NewCallQueue.Identity
     }
 
@@ -1362,29 +1438,6 @@ function Import-NasAACQData {
         # Need to clean the display name and but keep spaces, resource accounts need spaces removing
         $ResourceAccountUPN = "{0}{1}@{2}" -f $AARAPrefix, $($CleanedWorkflowName.Replace(" ","")), $($TenantDomain.Replace(" ",""))
 
-        # Take the cleaned workflow name and add spaces before every upper character except the 1st one
-        #$CleanedWorkflowNameWithSpaces = $CleanedWorkflowName[0]
-#
-        #$prevChar = $CleanedWorkflowName[0]
-#
-        ## Loop through the workflow name, character by character, skipping index 0
-        #for($i=1;$i -lt $CleanedWorkflowName.length;$i++){
-        #    # If the indexed character is upper, then add a space before
-        #    if([char]::IsUpper($CleanedWorkflowName[$i])){
-        #        if(!([char]::IsUpper($prevChar))){
-        #            $CleanedWorkflowNameWithSpaces+=" $($CleanedWorkflowName[$i])"
-        #        }else{
-        #            $CleanedWorkflowNameWithSpaces+=$CleanedWorkflowName[$i]
-        #        }
-        #        $prevChar = $CleanedWorkflowName[$i]
-        #    }else{
-        #        # Don't add a space if lower
-        #        $CleanedWorkflowNameWithSpaces+=$CleanedWorkflowName[$i]
-        #        $prevChar = $CleanedWorkflowName[$i]
-        #    }
-        #}
-        #Write-Verbose "Cleaned the queue name and added spaces for user friendly view: $CleanedWorkflowNameWithSpaces"
-
         Write-Verbose "Configuring the workflow object: $($_.Name) - $($_.Identity.InstanceId.Guid)"
         [PSCustomObject]@{
             Identity = $_.Identity.InstanceId.Guid
@@ -1662,9 +1715,13 @@ function Import-NasAACQData {
 
         #If there is no AllowOptOut specified, set to default False
         if(!($filterAgent.AllowOptOut)){
-            $AllowOptOut = "False"
+            $AllowOptOut = "N"
         }else{
-            $AllowOptOut = $filterAgent.AllowOptOut
+            if($filterAgent.AllowOptOut -eq $False){
+                $AllowOptOut = "N"
+            }else{
+                $AllowOptOut = "Y"
+            }
         }
 
         Write-Verbose "Building the queue object: $($x.Name) - $($x.Identity.InstanceId.Guid)"
@@ -1687,29 +1744,6 @@ function Import-NasAACQData {
 
         #Build the resource account upn for bespoke requirements
         $ResourceAccountUPN = "{0}{1}@{2}" -f $CQRAPrefix, $($CleanedQueueName.Replace(" ","")), $($TenantDomain.Replace(" ",""))
-
-        # Take the cleaned queue name and add spaces before every upper character except the 1st one
-        #$CleanedQueueNameWithSpaces = $CleanedQueueName[0]
-#
-        #$prevChar = $CleanedQueueName[0]
-#
-        ## Loop through the queue name, character by character, skipping index 0
-        #for($i=1;$i -lt $CleanedQueueName.length;$i++){
-        #    # If the indexed character is upper, then add a space before
-        #    if([char]::IsUpper($CleanedQueueName[$i])){
-        #        if(!([char]::IsUpper($prevChar))){
-        #            $CleanedQueueNameWithSpaces+=" $($CleanedQueueName[$i])"
-        #        }else{
-        #            $CleanedQueueNameWithSpaces+="$($CleanedQueueName[$i])"
-        #        }
-        #        $prevChar = $CleanedQueueName[$i]
-        #    }else{
-        #        # Don't add a space if lower
-        #        $CleanedQueueNameWithSpaces+=$CleanedQueueName[$i]
-        #        $prevChar = $CleanedQueueName[$i]
-        #    }
-        #}
-        #Write-Verbose "Cleaned the queue name and added spaces for user friendly view: $CleanedQueueNameWithSpaces"
 
         $returncqobj = [PSCustomObject][ordered]@{
             QueueID = $x.Identity.InstanceId.Guid
@@ -1754,6 +1788,10 @@ function Import-NasAACQData {
         @{l="SatOpen";e={$_.SaturdayHours1.OpenTime.ToString()}},@{l="SatClose";e={$_.SaturdayHours1.CloseTime.ToString()}},
         @{l="SunOpen";e={$_.SundayHours1.OpenTime.ToString()}},@{l="SunClose";e={$_.SundayHours1.CloseTime.ToString()}} |
         Export-Excel -Path "$rootFolder\AACQDataImport.xlsx" -WorksheetName "Business Hours" -NoNumberConversion "Name" -BoldTopRow -AutoSize
+    
+    #Export the languages
+    Write-Verbose "Exporting the languages"
+    Get-NASTeamsLanguages -rootFolder $rootFolder
 
     Write-Verbose "Exports complete, location: $rootFolder\AACQDataImport.xlsx"
 
