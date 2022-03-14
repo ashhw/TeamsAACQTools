@@ -610,13 +610,13 @@ function New-NasTeamsResourceAccount {
     if($CallQueue){
         $AppID = "11cd3e2e-fccb-42ad-ad00-878b93575e07"
         #$Prefix = "racq-cc-lll-"
-        $DisplayName = $CallQueue.CleanedRAName
+        $DisplayName = $CallQueue.Name
         #$TenantDomain = $CallQueue.TenantDomain
         $PhoneNumber = $CallQueue.PhoneNumber
     }else{
         $AppID = "ce933385-9390-45d1-9512-c8d228074e07"
         #$Prefix = "raaa-cc-lll-"
-        $DisplayName = $AutoAttendant.CleanedRAName
+        $DisplayName = $AutoAttendant.Name
         #$TenantDomain = $AutoAttendant.TenantDomain
         $PhoneNumber = $AutoAttendant.PhoneNumber
     }
@@ -717,7 +717,7 @@ function New-NasTeamsResourceAccountAssociation{
     }
     Write-Verbose "Resource account: $ResourceAccountObjectID available, moving on."
 
-    if(($CallQueue | gm)[0].typename -eq "NasCQ"){
+    if(($CallQueue | Get-Member)[0].typename -eq "NasCQ"){
         $RAConfigurationID = $CallQueue.Guid.Guid
     }else{
         $RAConfigurationID = $CallQueue.Identity
