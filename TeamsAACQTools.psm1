@@ -1442,7 +1442,7 @@ function Import-NasAACQData {
             Identity = $_.Identity.InstanceId.Guid
             ResourceAccountUPN = $ResourceAccountUPN
             CleanedName = $CleanedWorkflowName
-            Name = $_.Name
+            SkypeName = $_.Name
             PhoneNumber = $LineURI
             LanguageID = $_.Language
             TimeZone = $_.TimeZone
@@ -1540,6 +1540,8 @@ function Import-NasAACQData {
 
     $ImportQueues = foreach($x in $Queues){
 
+        Write-Verbose "Building the queue object: $($x.Name) -  $($x.Identity.InstanceId.Guid)"
+
         if($x.TimeoutAction.Action -ne "Terminate"){
             Write-Verbose "Timeout action not set to terminate, setting the timeout threshold"
             if(([int]$x.TimeoutThreshold -ge 15) -and ([int]$x.TimeoutThreshold -le 180)){
@@ -1634,19 +1636,22 @@ function Import-NasAACQData {
         if($Interactive){
             Write-Information "You must choose a queue configuration in the pop up window, otherwise to exit, press cancel twice."
         }
-        
+
+        Write-Verbose "Audio :: Is it greater than 1? $($ImportWorkflows.where({$_.DefaultActionTargetQueue -eq $x.Identity.InstanceId.Guid }).UseDefaultMusicOnHold.count -gt 1)"
+
         # Set the music variables
-        if(($ImportWorkflows.where({$_.DefaultActionTargetQueue -eq $x.Identity.InstanceId.Guid }).UseDefaultMusicOnHold).count -gt 1){
+        if(($ImportWorkflows.where({$_.DefaultActionTargetQueue -eq $x.Identity.InstanceId.Guid -or $_.DefaultActionQuestions -like "*$($x.Identity.InstanceId.Guid)*"})).UseDefaultMusicOnHold.count -gt 1){
             #If not -Interactive, throw to let the user know there is problem with the data
             if(!($interactive)){
                 Write-Error "Call queue: ID: $($x.Identity.InstanceId.Guid) - Name: $($x.Name) found multiple workflows with differing music on hold settings"
                 throw "Re-run the cmdlet as ""Import-NasAACQData -Interactive"" to choose which music on hold value."
             }else{
+                $ignore = $null
                 $returnObject = $null
                 #Check the value is present, if it isn't after 2 attempts, throw an error
                 while(!($returnObject) -and ($ignore -le 1)){
                     $ignore++
-                    $returnObject = ($ImportWorkflows.where({$_.DefaultActionTargetQueue -eq $x.Identity.InstanceId.Guid }) | Out-GridView -OutputMode Single -Title "Choose the queue music configuration required")
+                    $returnObject = ($ImportWorkflows.where({$_.DefaultActionTargetQueue -eq $x.Identity.InstanceId.Guid -or $_.DefaultActionQuestions -like "*$($x.Identity.InstanceId.Guid)*" }) | Out-GridView -OutputMode Single -Title "Choose the queue music configuration required")
                     Write-verbose "UseDefaultMusicOnHold: chosen option $($returnObject.UseDefaultMusicOnHold)"
                 }
                 if(!($returnObject)){
@@ -1663,19 +1668,19 @@ function Import-NasAACQData {
                 }
             }
         }else{
-            if(($ImportWorkflows.where({$_.DefaultActionTargetQueue -eq $x.Identity.InstanceId.Guid }).UseDefaultMusicOnHold) -eq "Y"){
+            if(($ImportWorkflows.where({$_.DefaultActionTargetQueue -eq $x.Identity.InstanceId.Guid -or $_.DefaultActionQuestions -like "*$($x.Identity.InstanceId.Guid)*"}).UseDefaultMusicOnHold) -eq "Y"){
                 $UseDefaultMusicOnHoldQueue = "Y"
             }
-            if(($ImportWorkflows.where({$_.DefaultActionTargetQueue -eq $x.Identity.InstanceId.Guid }).UseDefaultMusicOnHold) -eq "N"){
+            if(($ImportWorkflows.where({$_.DefaultActionTargetQueue -eq $x.Identity.InstanceId.Guid -or $_.DefaultActionQuestions -like "*$($x.Identity.InstanceId.Guid)*" }).UseDefaultMusicOnHold) -eq "N"){
                 # Set the music on hold values
                 Write-Verbose "Setting music on hold values."
-                Write-Verbose "`$UseDefaultMusicOnHoldQueue = $($ImportWorkflows.where({$_.DefaultActionTargetQueue -eq $x.Identity.InstanceId.Guid }).UseDefaultMusicOnHold)"
-                Write-Verbose "`$CustomMusicOnHoldOriginalFileNameQueue = $($ImportWorkflows.where({$_.DefaultActionTargetQueue -eq $x.Identity.InstanceId.Guid }).CustomMusicOnHoldFileName)"
-                Write-Verbose "`$CustomMusicOnHoldFilePathQueue = $($ImportWorkflows.where({$_.DefaultActionTargetQueue -eq $x.Identity.InstanceId.Guid }).MusicOnHoldAudioFilePath)"
+                Write-Verbose "`$UseDefaultMusicOnHoldQueue = $($ImportWorkflows.where({$_.DefaultActionTargetQueue -eq $x.Identity.InstanceId.Guid -or $_.DefaultActionQuestions -like "*$($x.Identity.InstanceId.Guid)*" }).UseDefaultMusicOnHold)"
+                Write-Verbose "`$CustomMusicOnHoldOriginalFileNameQueue = $($ImportWorkflows.where({$_.DefaultActionTargetQueue -eq $x.Identity.InstanceId.Guid -or $_.DefaultActionQuestions -like "*$($x.Identity.InstanceId.Guid)*" }).CustomMusicOnHoldFileName)"
+                Write-Verbose "`$CustomMusicOnHoldFilePathQueue = $($ImportWorkflows.where({$_.DefaultActionTargetQueue -eq $x.Identity.InstanceId.Guid -or $_.DefaultActionQuestions -like "*$($x.Identity.InstanceId.Guid)*" }).MusicOnHoldAudioFilePath)"
                 $UseDefaultMusicOnHoldQueue = "N"
                 Write-Verbose "Use default music on hold is set to N, setting custom music on hold"
-                $CustomMusicOnHoldOriginalFileNameQueue = $ImportWorkflows.where({$_.DefaultActionTargetQueue -eq $x.Identity.InstanceId.Guid }).CustomMusicOnHoldFileName
-                $CustomMusicOnHoldFilePathQueue = $ImportWorkflows.where({$_.DefaultActionTargetQueue -eq $x.Identity.InstanceId.Guid }).MusicOnHoldAudioFilePath
+                $CustomMusicOnHoldOriginalFileNameQueue = $ImportWorkflows.where({$_.DefaultActionTargetQueue -eq $x.Identity.InstanceId.Guid -or $_.DefaultActionQuestions -like "*$($x.Identity.InstanceId.Guid)*" }).CustomMusicOnHoldFileName
+                $CustomMusicOnHoldFilePathQueue = $ImportWorkflows.where({$_.DefaultActionTargetQueue -eq $x.Identity.InstanceId.Guid -or $_.DefaultActionQuestions -like "*$($x.Identity.InstanceId.Guid)*" }).MusicOnHoldAudioFilePath
             }
             else{
                 $UseDefaultMusicOnHoldQueue = "Y"
@@ -1723,6 +1728,52 @@ function Import-NasAACQData {
             }
         }
 
+        # Null the languageID var
+        $CQLanguageID = $null
+        $returnObject = $null
+
+        #Run if -Interactive is specified to let the user know what to do
+        if($Interactive){
+            Write-Information "You must choose a language ID configuration in the pop up window, otherwise to exit, press cancel twice."
+        }
+
+        Write-Verbose "Language :: Is it greater than 1? $($ImportWorkflows.where({$_.DefaultActionTargetQueue -eq $x.Identity.InstanceId.Guid -or $_.DefaultActionQuestions -like "*$($x.Identity.InstanceId.Guid)*"}).LanguageID.count -gt 1)"
+
+        # Set the language ID variables
+        # Set the languageID from the workflow to export for the queue
+        if(($ImportWorkflows.where({$_.DefaultActionTargetQueue -eq $x.Identity.InstanceId.Guid -or $_.DefaultActionQuestions -like "*$($x.Identity.InstanceId.Guid)*"})).LanguageID.count -gt 1){
+            #If not -Interactive, throw to let the user know there is problem with the data
+            if(!($interactive)){
+                Write-Error "Call queue: ID: $($x.Identity.InstanceId.Guid) - Name: $($x.Name) found multiple workflows with differing language ID"
+                throw "Re-run the cmdlet as ""Import-NasAACQData -Interactive"" to choose which language ID value."
+            }else{
+                $ignore = $null
+                $returnObject = $null
+                #Check the value is present, if it isn't after 2 attempts, throw an error
+                while(!($returnObject) -and ($ignore -le 1)){
+                    $ignore++
+                    $returnObject = ($ImportWorkflows.where({$_.DefaultActionTargetQueue -eq $x.Identity.InstanceId.Guid -or $_.DefaultActionQuestions -like "*$($x.Identity.InstanceId.Guid)*"}) | Out-GridView -OutputMode Single -Title "Choose the queue LanguageID configuration required")
+                    Write-verbose "Language ID: chosen option $($returnObject.LanguageID)"
+                }
+                if(!($returnObject)){
+                    throw "You must choose an option to continue."
+                }
+                $CQLanguageID = $returnObject.LanguageID
+
+                Write-Verbose "Call queue: ID: $($x.Identity.InstanceId.Guid) - Setting LanguageID to: $CQLanguageID"
+            }
+        }else{
+            # If no languageID value, then set default en-gb
+            if(!($ImportWorkflows.where({$_.DefaultActionTargetQueue -eq $x.Identity.InstanceId.Guid -or $_.DefaultActionQuestions -like "*$($x.Identity.InstanceId.Guid)*"})).LanguageID){
+                $CQLanguageID = "en-GB"
+            }else{
+                # Set langauge ID from workflow value
+                $CQLanguageID = ($ImportWorkflows.where({$_.DefaultActionTargetQueue -eq $x.Identity.InstanceId.Guid -or $_.DefaultActionQuestions -like "*$($x.Identity.InstanceId.Guid)*"})).LanguageID
+                Write-Verbose "Call queue: ID: $($x.Identity.InstanceId.Guid) - Language ID set to $CQLanguageID"
+            }
+        }
+
+        Write-Verbose "LanguageID is $CQLanguageID"
         Write-Verbose "Building the queue object: $($x.Name) - $($x.Identity.InstanceId.Guid)"
 
         Write-Verbose "Overflow action target? $OverflowActionUri"
@@ -1731,8 +1782,10 @@ function Import-NasAACQData {
         # Let's create the 'cleaned' name, ready for the Teams import
         Write-Verbose "Cleaning the imported name to remove special characters"
 
+        # Remove underscores before cleaning the name
         $x.name = $x.name.replace("_"," ")
 
+        # Clean the name but keep the spaces for user friendly display name
         $CleanedQueueName = Remove-StringSpecialCharacter -String $x.Name -SpecialCharacterToKeep " "
 
         #If prefix is specified for bespoke requirements
@@ -1749,7 +1802,7 @@ function Import-NasAACQData {
             ResourceAccountUPN = $ResourceAccountUPN
             CleanedName = $CleanedQueueName
             SkypeName = $x.Name
-            LanguageID = "en-gb"
+            LanguageID = $CQLanguageID
             RoutingMethod = $RoutingMethod
             PresenceBasedRouting = "N"
             ConferenceMode = "Y"
@@ -1773,10 +1826,10 @@ function Import-NasAACQData {
 
     # Export to excel
     Write-Verbose "Exporting workflows to Excel"
-    $ImportWorkflows | Sort-Object name | Export-Excel -Path "$rootFolder\AACQDataImport.xlsx" -WorksheetName "Auto Attendants" -BoldTopRow -AutoSize
+    $ImportWorkflows | Sort-Object CleanedName | Export-Excel -Path "$rootFolder\AACQDataImport.xlsx" -WorksheetName "Auto Attendants" -BoldTopRow -AutoSize
 
     Write-Verbose "Exporting queues to Excel"
-    $ImportQueues | Sort-Object name | Export-Excel -Path "$rootFolder\AACQDataImport.xlsx" -WorksheetName "Call Queues" -BoldTopRow -AutoSize
+    $ImportQueues | Sort-Object CleanedName | Export-Excel -Path "$rootFolder\AACQDataImport.xlsx" -WorksheetName "Call Queues" -BoldTopRow -AutoSize
 
     Write-Verbose "Exporting business hours to Excel"
     $hours | Select-Object @{l="BusinessHoursID";exp={$_.Identity.InstanceID.Guid}}, @{l="Name";exp={$_.Name.split("_")[0]}},
