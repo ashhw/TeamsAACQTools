@@ -367,8 +367,8 @@ Function Import-NasCQ {
 
         #Create the call queue objects from the Excel data input
         $CQObj.ResourceAccountUPN = $x.ResourceAccountUPN
-        $CQObj.CleanedRAName = $x.CleanedName
-        $CQObj.Name = $x.Name
+        #$CQObj.CleanedRAName = $x.CleanedName
+        $CQObj.Name = $x.CleanedName
         $CQObj.Prefix = $x.Prefix
         $CQObj.TenantDomain = $($TenantDomain)
         $CQObj.LanguageID = $x.LanguageID
