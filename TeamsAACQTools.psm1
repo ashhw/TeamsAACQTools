@@ -722,7 +722,6 @@ function New-NasTeamsResourceAccountAssociation{
     }else{
         $RAConfigurationID = $CallQueue.Identity
     }
- 
 
     if(Get-CsOnlineApplicationInstance -Identities $ResourceAccountObjectID){
         $NewCQAppInstanceParameters = @{
