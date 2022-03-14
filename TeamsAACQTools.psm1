@@ -347,16 +347,16 @@ Function Import-NasCQ {
     # Check Excel module is installed
     Confirm-InstalledModule -Module ImportExcel -moduleName "ImportExcel module"
     
-    $Connected = Confirm-ExistingPSSession -ComputerName "api.interfaces.records.teams.microsoft.com"
+    #$Connected = Confirm-ExistingPSSession -ComputerName "api.interfaces.records.teams.microsoft.com"
 
-    if (!$Connected) {
-        Write-Verbose "No existing PowerShell Session, attempting connection to Microsoft Teams"
-        Connect-MicrosoftTeams -UseDeviceAuthentication
+    #if (!$Connected) {
+    #    Write-Verbose "No existing PowerShell Session, attempting connection to Microsoft Teams"
+    #    Connect-MicrosoftTeams -UseDeviceAuthentication
 
-    }
-    else {
-        Write-Verbose "Using existing Teams PowerShell Session..."
-    }
+    #}
+    #else {
+    #    Write-Verbose "Using existing Teams PowerShell Session..."
+    #}
 
 
     if($InstallModules){
