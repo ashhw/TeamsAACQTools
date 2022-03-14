@@ -5,20 +5,20 @@ Building out several Auto Attendants, Call Queues and Resource Accounts in Micro
 The module can be used to take the "RGSConfig.zip" file from Skype for Business and convert it into an Excel workbook that can be used to build the configuration in Teams.
 
 ## Syntax
-Import-NasAACQData
+### Import-NasAACQData
 Build Excel workbook by specifying the Resource Account UPN prefix
 ```powershell
 Import-NasAACQData [[-rootFolder] <string>] [[-ffmpeglocation] <string>] [[-TenantDomain] <string>] [[-AARAPrefix] <string>] [[-CQRAPrefix] <string>]
 Import-NasAACQData -rootFolder <"Location of Excel Workbook"> -ffmpeglocation <"Location of ffmpeg.exe"> -TenantDomain <"Tenant Domain"> -CQRAPrefix racq_ -AARAPrefix raaa_
 ```
-Parameters
--Interactive Parameter
+#### Parameters
+-Interactive
 If there is a duplicate Music on Hold entry in the Skype for Business Response Group configuration, i.e. Two workflows target the same call queue (therefore using call queue Music on Hold). Use -Interactive parameter to be prompted with an interface to choose the correct Music on Hold to use.
 
--CQRAPrefix Parameter
+-CQRAPrefix
 Specify the prefix of the call queue resource account. i.e. racq_
 
--AARAPrefix Parameter
+-AARAPrefix
 Specify the prefix of the call queue resource account. i.e. raaa_
 
 -TenantDomain
@@ -30,13 +30,13 @@ Specify the ffmpeg.exe path for the audio file conversion to .mp3.
 -SkipAudio
 Specify this to skip the audio conversion as you would like to do this manually or will be using new audio files.
 
-Import-NasCQ
+### Import-NasCQ
 Create the resource accounts, build the call queues and associate the resource accounts
 ```powershell
 Import-NasCQ [-CQData] <String> [-InstallModules] [-NoCreateCQ] [-NoRA]
 Import-NasCQ -CQData <"Path to Excel Workbook">
 ```
-Parameters
+#### Parameters
 -CQData
 Must be specified as the Excel workbook used to build the call queues and resource accounts.
 
