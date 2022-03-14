@@ -252,6 +252,39 @@ function Remove-StringSpecialCharacter {
         }
     } #PROCESS
 }
+
+function Confirm-InstalledModule {
+    param (
+
+        [Parameter (mandatory = $true)][String]$module,
+        [Parameter (mandatory = $true)][String]$moduleName
+        
+    )
+
+    # Do you have module installed?
+    Write-Host "`nChecking $moduleName installed..." -NoNewline
+
+    if (Get-Module -ListAvailable -Name $module) {
+        Write-Host " INSTALLED" -ForegroundColor Green
+    }
+    else {
+        Write-Host " NOT INSTALLED" -ForegroundColor Red
+        break
+    }
+    
+}
+
+function Confirm-ExistingPSSession {
+    param (
+        [Parameter (mandatory = $true)]
+        [string]$ComputerName
+    )
+    
+    $OpenSessions = Get-PSSession | Where-Object { $_.ComputerName -like $ComputerName -and $_.State -eq "Opened" }
+    return $OpenSessions
+
+}
+
 Function Import-NasCQ {
     <#
     .SYNOPSIS
@@ -303,6 +336,28 @@ Function Import-NasCQ {
     $errorStringPrefix = "[ERROR]"
     $InfoStringPrefix = "[INFO]"
     $RATypeAccountString = ":: RESOURCE ACCOUNT ::"
+
+    Write-Host "`n----------------------------------------------------------------------------------------------
+    `n TeamsAACQTools - Ash Ward - Nasstar
+    `n----------------------------------------------------------------------------------------------" -ForegroundColor Yellow
+
+    # Check Teams module is installed
+    Confirm-InstalledModule -Module MicrosoftTeams -moduleName "Microsoft Teams module"
+    
+    # Check Excel module is installed
+    Confirm-InstalledModule -Module ImportExcel -moduleName "ImportExcel module"
+    
+    $Connected = Confirm-ExistingPSSession -ComputerName "api.interfaces.records.teams.microsoft.com"
+
+    if (!$Connected) {
+        Write-Verbose "No existing PowerShell Session, attempting connection to Microsoft Teams"
+        Connect-MicrosoftTeams -UseDeviceAuthentication
+
+    }
+    else {
+        Write-Verbose "Using existing Teams PowerShell Session..."
+    }
+
 
     if($InstallModules){
         Write-Verbose "$InfoStringPrefix Checking required modules are installed."
@@ -653,6 +708,7 @@ function New-NasTeamsResourceAccount {
         $NewRA = Get-CsOnlineApplicationInstance -Identity $RAAccountUPN -ErrorAction SilentlyContinue
         if(!($NewRA)){
                 Write-Verbose "$($InfoStringPrefix) $($RATypeAccountString) $($RAAccountUPN) - Account doesn't exist, moving to creation."
+                Write-Verbose "Resource Account display name: ""$DisplayName"""
                 # Create resource account of call queue type
                 $RAParameters = @{
                     UserPrincipalName = $RAAccountUPN
@@ -1280,6 +1336,13 @@ function Import-NasAACQData {
         [Parameter()]
         [switch]$SkipAudio
     )
+
+    Write-Host "`n----------------------------------------------------------------------------------------------
+    `n TeamsAACQTools - Ash Ward - Nasstar
+    `n----------------------------------------------------------------------------------------------" -ForegroundColor Yellow
+
+    # Check Excel module is installed
+    Confirm-InstalledModule -Module ImportExcel -moduleName "ImportExcel module"
     
     #$rootFolder = "C:\Users\Ash Ward\OneDrive - Modality Systems\Documents\Chris\RgsImportExport"
     Write-Verbose "Importing queues from: $rootFolder\Queues.xml"
@@ -1633,9 +1696,9 @@ function Import-NasAACQData {
         $UseDefaultMusicOnHoldQueue,$CustomMusicOnHoldOriginalFileNameQueue,$CustomMusicOnHoldFilePathQueue = $null
 
         #Run if -Interactive is specified to let the user know what to do
-        if($Interactive){
-            Write-Information "You must choose a queue configuration in the pop up window, otherwise to exit, press cancel twice."
-        }
+        #if($Interactive){
+        #    Write-Host "You must choose a queue configuration in the pop up window, otherwise to exit, press cancel twice."
+        #}
 
         Write-Verbose "Audio :: Is it greater than 1? $($ImportWorkflows.where({$_.DefaultActionTargetQueue -eq $x.Identity.InstanceId.Guid }).UseDefaultMusicOnHold.count -gt 1)"
 
@@ -1651,6 +1714,7 @@ function Import-NasAACQData {
                 #Check the value is present, if it isn't after 2 attempts, throw an error
                 while(!($returnObject) -and ($ignore -le 1)){
                     $ignore++
+                    Write-Host "Duplicate music on hold value found: You must choose a queue configuration in the pop up window, otherwise to exit, press cancel twice."
                     $returnObject = ($ImportWorkflows.where({$_.DefaultActionTargetQueue -eq $x.Identity.InstanceId.Guid -or $_.DefaultActionQuestions -like "*$($x.Identity.InstanceId.Guid)*" }) | Out-GridView -OutputMode Single -Title "Choose the queue music configuration required")
                     Write-verbose "UseDefaultMusicOnHold: chosen option $($returnObject.UseDefaultMusicOnHold)"
                 }
@@ -1733,9 +1797,9 @@ function Import-NasAACQData {
         $returnObject = $null
 
         #Run if -Interactive is specified to let the user know what to do
-        if($Interactive){
-            Write-Information "You must choose a language ID configuration in the pop up window, otherwise to exit, press cancel twice."
-        }
+        #if($Interactive){
+        #    Write-Host "You must choose a language ID configuration in the pop up window, otherwise to exit, press cancel twice."
+        #}
 
         Write-Verbose "Language :: Is it greater than 1? $($ImportWorkflows.where({$_.DefaultActionTargetQueue -eq $x.Identity.InstanceId.Guid -or $_.DefaultActionQuestions -like "*$($x.Identity.InstanceId.Guid)*"}).LanguageID.count -gt 1)"
 
@@ -1752,6 +1816,7 @@ function Import-NasAACQData {
                 #Check the value is present, if it isn't after 2 attempts, throw an error
                 while(!($returnObject) -and ($ignore -le 1)){
                     $ignore++
+                    Write-Host "Duplicate language ID found: You must choose a language ID in the pop up window, otherwise to exit, press cancel twice."
                     $returnObject = ($ImportWorkflows.where({$_.DefaultActionTargetQueue -eq $x.Identity.InstanceId.Guid -or $_.DefaultActionQuestions -like "*$($x.Identity.InstanceId.Guid)*"}) | Out-GridView -OutputMode Single -Title "Choose the queue LanguageID configuration required")
                     Write-verbose "Language ID: chosen option $($returnObject.LanguageID)"
                 }
@@ -1825,14 +1890,29 @@ function Import-NasAACQData {
     } # end foreach loop - $ImportQueues = foreach($x in $Queues){
 
     # Export to excel
-    Write-Verbose "Exporting workflows to Excel"
-    $ImportWorkflows | Sort-Object CleanedName | Export-Excel -Path "$rootFolder\AACQDataImport.xlsx" -WorksheetName "Auto Attendants" -BoldTopRow -AutoSize
+    Write-Host "Exporting workflows..." -NoNewline
+    try{
+        $ImportWorkflows | Sort-Object CleanedName | Export-Excel -Path "$rootFolder\AACQDataImport.xlsx" -WorksheetName "Auto Attendants" -BoldTopRow -AutoSize
+        Write-Host " SUCCESS" -ForegroundColor Green
+    }catch{
+        Write-Host " FAILED - Check if the file is open" -ForegroundColor Red
+        break
+    }
 
-    Write-Verbose "Exporting queues to Excel"
-    $ImportQueues | Sort-Object CleanedName | Export-Excel -Path "$rootFolder\AACQDataImport.xlsx" -WorksheetName "Call Queues" -BoldTopRow -AutoSize
+    Write-Host "Exporting queues..." -NoNewline
 
-    Write-Verbose "Exporting business hours to Excel"
-    $hours | Select-Object @{l="BusinessHoursID";exp={$_.Identity.InstanceID.Guid}}, @{l="Name";exp={$_.Name.split("_")[0]}},
+    try{
+        $ImportQueues | Sort-Object CleanedName | Export-Excel -Path "$rootFolder\AACQDataImport.xlsx" -WorksheetName "Call Queues" -BoldTopRow -AutoSize
+        Write-Host " SUCCESS" -ForegroundColor Green
+    }catch{
+        Write-Host " FAILED - Check if the file is open" -ForegroundColor Red
+        break
+    }
+
+    Write-Host "Exporting business hours..." -NoNewline
+
+    try{
+        $hours | Select-Object @{l="BusinessHoursID";exp={$_.Identity.InstanceID.Guid}}, @{l="Name";exp={$_.Name.split("_")[0]}},
         @{l="MonOpen";e={$_.MondayHours1.OpenTime.ToString()}},@{l="MonClose";e={$_.MondayHours1.CloseTime.ToString()}},
         @{l="TueOpen";e={$_.TuesdayHours1.OpenTime.ToString()}},@{l="TueClose";e={$_.TuesdayHours1.CloseTime.ToString()}},
         @{l="WedsOpen";e={$_.WednesdayHours1.OpenTime.ToString()}},@{l="WedsClose";e={$_.WednesdayHours1.CloseTime.ToString()}},
@@ -1841,19 +1921,27 @@ function Import-NasAACQData {
         @{l="SatOpen";e={$_.SaturdayHours1.OpenTime.ToString()}},@{l="SatClose";e={$_.SaturdayHours1.CloseTime.ToString()}},
         @{l="SunOpen";e={$_.SundayHours1.OpenTime.ToString()}},@{l="SunClose";e={$_.SundayHours1.CloseTime.ToString()}} |
         Export-Excel -Path "$rootFolder\AACQDataImport.xlsx" -WorksheetName "Business Hours" -NoNumberConversion "Name" -BoldTopRow -AutoSize
+        Write-Host " SUCCESS" -ForegroundColor Green
+    }catch{
+        Write-Host " FAILED - Check if the file is open" -ForegroundColor Red
+        break
+    }
     
     #Export the languages
-    Write-Verbose "Exporting the languages"
-    Get-NASTeamsLanguages -rootFolder $rootFolder
+    #Write-Verbose "Exporting the languages"
+    #Get-NASTeamsLanguages -rootFolder $rootFolder
 
-    Write-Verbose "Exports complete, location: $rootFolder\AACQDataImport.xlsx"
+    Write-Verbose "All exports complete, location: $rootFolder\AACQDataImport.xlsx"
 
     if(!($SkipAudio)){
+        Write-Host "Converting audio files and exporting..."
         #Convert and export music files
         Convert-NasImportMusicFile -rootfolder $rootfolder -ffmpegLocation $ffmpeglocation
     }else{
         Write-Verbose "-SkipAudio set, skipping audio conversion."
     }
+
+    Write-Host "Export complete. File location: ""$rootFolder\AACQDataImport.xlsx"""
 
 }
 
@@ -1921,5 +2009,4 @@ function Convert-NasImportMusicFile{
             Write-Verbose "Folder: $rootfolder\$($musicid.identity) doesn't exist"
         }
     }
-    Write-Verbose "All music files converted to mp3"
 }
