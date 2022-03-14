@@ -899,7 +899,7 @@ function New-NasTeamsCallQueue {
             Write-Verbose "Setting LanguageID: $($CallQueue.LanguageID)"
             $NewCQParameters.LanguageID = $CallQueue.LanguageID
         }else{
-            Write-Verbose "Setting default en-gb LanguageID due non specified: $($CallQueue.LanguageID)"
+            Write-Verbose "Setting default en-gb LanguageID due to non specified: $($CallQueue.LanguageID)"
             $NewCQParameters.LanguageID = "en-gb"
         }
 
@@ -1748,7 +1748,8 @@ function Import-NasAACQData {
             QueueID = $x.Identity.InstanceId.Guid
             ResourceAccountUPN = $ResourceAccountUPN
             CleanedName = $CleanedQueueName
-            Name = $x.Name
+            SkypeName = $x.Name
+            LanguageID = "en-gb"
             RoutingMethod = $RoutingMethod
             PresenceBasedRouting = "N"
             ConferenceMode = "Y"
