@@ -1931,12 +1931,13 @@ function Import-NasAACQData {
     #Write-Verbose "Exporting the languages"
     #Get-NASTeamsLanguages -rootFolder $rootFolder
 
-    Write-Verbose "All exports complete, location: $rootFolder\AACQDataImport.xlsx"
+    Write-Verbose "All Excel exports complete, location: $rootFolder\AACQDataImport.xlsx"
 
     if(!($SkipAudio)){
         Write-Host "Converting audio files and exporting..."
         #Convert and export music files
         Convert-NasImportMusicFile -rootfolder $rootfolder -ffmpegLocation $ffmpeglocation
+        Write-Host "Audio files exported. Folder location: $rootFolder\audio"
     }else{
         Write-Verbose "-SkipAudio set, skipping audio conversion."
     }
@@ -1990,20 +1991,31 @@ function Convert-NasImportMusicFile{
             $OriginalFileString = $OriginalFile.tostring()
 
             # Build the new file path
-            #$OriginalCompletePath = "$OriginalPath\$OriginalFileString"
             Write-Verbose "Checking new file path: $OriginalFileString"
-            
-            # Execute ffmpeg to convert the file
-            & $ffmpegLocation -i $OriginalFileString $newFile
-            Write-Verbose "Original file name: $OriginalFileString"
-            Write-Verbose "New file name: $newfile"
 
+            $audioFileTestPath = Test-Path -Path "$ScriptLocation\$newFile"
+            if(!($audioFileTestPath)){
+                # Execute ffmpeg to convert the file
+                & $ffmpegLocation -i $OriginalFileString $newFile > $null
+                Write-Verbose "Original file name: $OriginalFileString"
+                Write-Verbose "New file name: $newfile"
+            }else{
+                Write-Verbose "Audio file already exists in location: ""$ScriptLocation\$newFile"""
+            }
+            
             # Specify the destination of the converted file
             $dest = "$rootfolder\audio\$($musicid.identity)"
             $pathofconvertedmusic = "$ScriptLocation\$newFile"
             
             # Move the converted file to the destination $dest
-            Move-Item -Path $pathofconvertedmusic -Destination $dest
+            $destTestPath = Test-Path -Path "$dest\$newfile"
+            if(!($destTestPath)){
+                Move-Item -Path $pathofconvertedmusic -Destination $dest
+                Write-Verbose "Moved ""$pathofconvertedmusic"" to ""$dest"""
+            }else{
+                Write-Verbose """$dest\$newfile"" already exists at the destination path"
+            }
+
             Write-Verbose "File $OriginalFileString converted to mp3 - result: $newfile"
         }else{
             Write-Verbose "Folder: $rootfolder\$($musicid.identity) doesn't exist"
