@@ -879,7 +879,6 @@ function New-NasTeamsCallQueue {
             } else {
                 Write-Error "$errorStringPrefix $CQTypeAccountString $($CallQueue.Name) :: WelcomeMusic file path $rootPath$($CallQueue.WelcomeMusicAudioFilePath) unreachable."
             }
-
         }
 
         #Check if the MusicOnHold has been specified in the data.
@@ -914,7 +913,7 @@ function New-NasTeamsCallQueue {
                 Write-Verbose "$InfoStringPrefix $CQTypeAccountString $($CallQueue.Name) :: MusicOnHold audio file $($MusicOnHoldCopyFilename) imported."
 
                 # Import the audio file into Teams
-                $MusicOnHoldAudioFile = Import-CsOnlineAudioFile -ApplicationId "HuntGroup” -FileName $MusicOnHoldFilename -Content $MusicOnHoldAudioFileContent
+                $MusicOnHoldAudioFile = Import-CsOnlineAudioFile -ApplicationId "HuntGroup" -FileName $MusicOnHoldFilename -Content $MusicOnHoldAudioFileContent
 
                 # Grab the ID - Required for the call queue
                 $MusicOnHoldAudioFileID = $MusicOnHoldAudioFile.id
