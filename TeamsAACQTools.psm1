@@ -851,7 +851,8 @@ function New-NasTeamsCallQueue {
             # Path returns true, therefore import and upload the file
             if($PathTest){
                 #Generate random filename for audio file
-                $WelcomeMusicFilename = "WelcomeMusic" + $CallQueue.Name + (Get-Random -Minimum 1 -Maximum 1000) + ".mp3"
+                #$WelcomeMusicFilename = "WelcomeMusic" + $CallQueue.Name + (Get-Random -Minimum 1 -Maximum 1000) + ".mp3"
+                $WelcomeMusicFilename = "$(Get-Random -Minimum 1 -Maximum 1000).mp3"
 
                 #Lets create duplicate file
                 #Build the filename path
@@ -897,7 +898,7 @@ function New-NasTeamsCallQueue {
             if($PathTest){
                 Write-Verbose "Path exists: $rootPath$($CallQueue.MusicOnHoldAudioFilePath)"
                 #Generate random filename for audio file
-                $MusicOnHoldFilename = "MusicOnHold" + $CallQueue.Name + (Get-Random -Minimum 1 -Maximum 1000) + ".mp3"
+                $MusicOnHoldFilename = "$(Get-Random -Minimum 1 -Maximum 1000).mp3"
 
                 #Lets create duplicate file
                 #Build the filename path
