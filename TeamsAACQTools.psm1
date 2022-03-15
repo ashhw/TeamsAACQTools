@@ -320,11 +320,10 @@ Function Import-NasCQ {
         #Give the user the option to install the required modules
         [switch]$InstallModules,
 
+        #Create the call queues with no prompts
         [switch]$NoCreateCQ,
 
-        [switch]$NoRA,
-
-        [string]$cqNamePrefix
+        [switch]$NoRA
 
     )
 
@@ -817,10 +816,7 @@ function New-NasTeamsCallQueue {
         #[Parameter(Mandatory=$True)]
         [NasCQ]$CallQueue,
         #[switch]$NoResourceAccount,
-        [switch]$force,
-
-        [Parameter(ValueFromPipeline)]
-        [string]$cqNamePrefix
+        [switch]$force
     )
 
     #Variables
@@ -936,17 +932,8 @@ function New-NasTeamsCallQueue {
         # Create call queue
         $NewCQParameters = @{}
 
-        if($cqNamePrefix){
-            Write-Verbose "Custom prefix specified, setting Call Queue name"
-            $newCQName = $null
-            $cqNoSpaces = $CallQueue.Name.replace(" ","")
-            $newCQName = "$cqNamePrefix$cqNoSpaces"
-            $NewCQParameters.Name = $newCQName
-            Write-Verbose "Custom prefix specified, Call Queue name set: $newCQName"
-        }else{
-            Write-Verbose "Custom prefix not specified, setting Call Queue name: $($CallQueue.Name)"
-            $NewCQParameters.Name = $CallQueue.Name
-        }
+        Write-Verbose "Setting Call Queue Name: $($CallQueue.Name)"
+        $NewCQParameters.Name = $CallQueue.Name
 
         # - Ash Ward 2022/02/16 - Need to create this due to the New-CsCallQueue cmdlet requiring the ObjectID and not the UPN
         #Only specify users if it exists in the data
