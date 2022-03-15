@@ -1338,7 +1338,11 @@ function Import-NasAACQData {
         [parameter()]
         [string]$cqNamePrefix,
         [parameter()]
-        [string]$aaNamePrefix
+        [string]$cqReplacementSuffix,
+        [parameter()]
+        [string]$aaNamePrefix,
+        [parameter()]
+        [string]$aaReplacementSuffix
     )
 
     Write-Host "`n----------------------------------------------------------------------------------------------
@@ -1503,17 +1507,17 @@ function Import-NasAACQData {
         if($_.Name -like "*queue" -or $_.Name -like "*RG" -or $_.Name -like "*(Q)" -or $_.Name -like "*RG Queue" -or $_.Name -like "* Q"){
             $CleanedWorkflowSplit = $CleanedWorkflowString.Split(" ")
             $CleanedWorkflowLastWordRemoved = [string]$CleanedWorkflowSplit[0..($CleanedWorkflowSplit.count-2)]
-            $CleanedWorkflowName = "{0}{1}" -f $($CleanedWorkflowLastWordRemoved -replace '\s+', ' ')," AA"
+            $CleanedWorkflowName = "{0}{1}" -f $($CleanedWorkflowLastWordRemoved -replace '\s+', ' ')," $aaReplacementSuffix"
+            # Need to clean, resource accounts need spaces removing
+            $ResourceAccountUPN = "{0}{1}@{2}" -f $AARAPrefix, $($CleanedWorkflowLastWordRemoved.Replace(" ","")), $($TenantDomain.Replace(" ",""))
         }else{
-            $CleanedWorkflowName = "{0}{1}" -f $($CleanedWorkflowString -replace '\s+', ' ')," AA"
+            $CleanedWorkflowName = "{0}{1}" -f $($CleanedWorkflowString -replace '\s+', ' ')," $aaReplacementSuffix"
+            $ResourceAccountUPN = "{0}{1}@{2}" -f $AARAPrefix, $($CleanedWorkflowString.Replace(" ","")), $($TenantDomain.Replace(" ",""))
         }
         if(!($AARAPrefix)){
             #Set the resource account prefix
             $AARAPrefix = "raaa-cc-lll-"
         }
-
-        # Need to clean the display name and but keep spaces, resource accounts need spaces removing
-        $ResourceAccountUPN = "{0}{1}@{2}" -f $AARAPrefix, $($CleanedWorkflowName.Replace(" ","")), $($TenantDomain.Replace(" ",""))
 
         # If the AA prefix is specified, example: Prefix: "aa-gb-pink-" Workflow: "My Workflow"
         # "My Workflow" changes to "aa-gb-pink-MyWorkFlow"
@@ -1889,9 +1893,12 @@ function Import-NasAACQData {
         if($x.Name -like "*queue" -or $x.Name -like "*RG" -or $x.Name -like "*(Q)" -or $x.Name -like "*RG Queue" -or $x.Name -like "* Q"){
             $CleanedQueueSplit = $CleanedQueueString.Split(" ")
             $CleanedQueueLastWordRemoved = [string]$CleanedQueueSplit[0..($CleanedQueueSplit.count-2)]
-            $CleanedQueueName = "{0}{1}" -f $($CleanedQueueLastWordRemoved -replace '\s+', ' ')," CQ"
+            $CleanedQueueName = "{0}{1}" -f $($CleanedQueueLastWordRemoved -replace '\s+', ' ')," $cqReplacementSuffix"
+            #Build the resource account upn for bespoke requirements
+            $ResourceAccountUPN = "{0}{1}@{2}" -f $CQRAPrefix, $($CleanedQueueLastWordRemoved.Replace(" ","")), $($TenantDomain.Replace(" ",""))
         }else{
-            $CleanedQueueName = "{0}{1}" -f $($CleanedQueueString -replace '\s+', ' ')," CQ"
+            $CleanedQueueName = "{0}{1}" -f $($CleanedQueueString -replace '\s+', ' ')," $cqReplacementSuffix"
+            $ResourceAccountUPN = "{0}{1}@{2}" -f $CQRAPrefix, $($CleanedQueueString.Replace(" ","")), $($TenantDomain.Replace(" ",""))
         }
 
         #If prefix is specified for bespoke requirements
@@ -1899,9 +1906,6 @@ function Import-NasAACQData {
             #Set the resource account prefix
             $CQRAPrefix = "racq-cc-lll-"
         }
-
-        #Build the resource account upn for bespoke requirements
-        $ResourceAccountUPN = "{0}{1}@{2}" -f $CQRAPrefix, $($CleanedQueueName.Replace(" ","")), $($TenantDomain.Replace(" ",""))
 
         # If the AA prefix is specified, example: Prefix: "aa-gb-pink-" Queue: "My Queue"
         # "My Queue" changes to "aa-gb-pink-MyQueue"
