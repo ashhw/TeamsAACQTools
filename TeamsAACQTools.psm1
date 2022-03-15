@@ -269,22 +269,11 @@ function Confirm-InstalledModule {
     }
     else {
         Write-Host " NOT INSTALLED" -ForegroundColor Red
+        Write-Error "Run again as Administrator and use the ""-InstallModules"" parameter to install the required modules"
         break
     }
     
 }
-
-function Confirm-ExistingPSSession {
-    param (
-        [Parameter (mandatory = $true)]
-        [string]$ComputerName
-    )
-    
-    $OpenSessions = Get-PSSession | Where-Object { $_.ComputerName -like $ComputerName -and $_.State -eq "Opened" }
-    return $OpenSessions
-
-}
-
 Function Import-NasCQ {
     <#
     .SYNOPSIS
@@ -323,7 +312,9 @@ Function Import-NasCQ {
         #Create the call queues with no prompts
         [switch]$NoCreateCQ,
 
-        [switch]$NoRA
+        [switch]$NoRA,
+
+        [switch]$NoBackup
 
     )
 
@@ -341,24 +332,7 @@ Function Import-NasCQ {
     `n TeamsAACQTools - Ash Ward - Nasstar
     `n----------------------------------------------------------------------------------------------" -ForegroundColor Yellow
 
-    # Check Teams module is installed
-    Confirm-InstalledModule -Module MicrosoftTeams -moduleName "Microsoft Teams module"
-    
-    # Check Excel module is installed
-    Confirm-InstalledModule -Module ImportExcel -moduleName "ImportExcel module"
-    
-    #$Connected = Confirm-ExistingPSSession -ComputerName "api.interfaces.records.teams.microsoft.com"
-
-    #if (!$Connected) {
-    #    Write-Verbose "No existing PowerShell Session, attempting connection to Microsoft Teams"
-    #    Connect-MicrosoftTeams -UseDeviceAuthentication
-
-    #}
-    #else {
-    #    Write-Verbose "Using existing Teams PowerShell Session..."
-    #}
-
-
+    #Interactive - InstallModules specified, guide the user through the module installation
     if($InstallModules){
         Write-Verbose "$InfoStringPrefix Checking required modules are installed."
 
@@ -395,6 +369,55 @@ Function Import-NasCQ {
         }
     }
 
+    # Non-Interactive - Check Teams module is installed
+    Confirm-InstalledModule -Module MicrosoftTeams -moduleName "Microsoft Teams module"
+
+    # Non-Interactive - Check Excel module is installed
+    Confirm-InstalledModule -Module ImportExcel -moduleName "ImportExcel module"
+    
+    #Check we are connected to Teams, if not, prompt user to connect
+    Write-Verbose "Checking if there is an existing Teams PowerShell session"
+    if(!(Get-CsTenant)){
+        throw "No existing Teams PowerShell sesssion, please run ""Connect-MicrosoftTeams"" to connect to the Teams"
+    }else{
+        Write-Host "`nChecking Teams PowerShell session..." -NoNewline
+        Write-Host " CONNECTED" -ForegroundColor Green
+    }
+
+    if(!($NoBackup)){
+        Write-Host "`nChecking if there are any Call Queues present in the Teams tenant..." -NoNewline
+        if(Get-CsCallQueue -WarningAction SilentlyContinue){
+            Write-Host " FOUND CALL QUEUES" -ForegroundColor Green
+            Write-Host "`nDisplaying call queues"
+            Write-Host "--------------------------"
+            (Get-CsCallQueue -WarningAction SilentlyContinue).Name
+            $AnswerExist = Read-Host "`nTo backup all call queues, press Y, otherwise press N to exit"
+            if($AnswerExist -eq "Y"){
+                Write-Host "`nChosen Y, call queue backup starting"
+            }else{
+                throw "`nChosen N, script aborted"
+            }
+            Backup-TeamsCallQueues -CQData $CQData
+            Write-Host "`nCall queues backed up, please check the data before moving on"
+            $disclaimerAnswerExist = Read-Host "`nDISCLAIMER: ARE YOU SURE YOU WISH TO CONTINUE? Y or N"
+            if($disclaimerAnswerExist -eq "Y"){
+                Write-Host "`nChosen Y, script continuing"
+            }else{
+                throw "`nChosen N, script aborted"
+            }
+        }else{
+            Write-Host " NOT FOUND" -ForegroundColor Yellow
+            $disclaimerAnswerNonExist = Read-Host "`nDISCLAIMER: ARE YOU SURE YOU WISH TO CONTINUE? Y or N"
+            if($disclaimerAnswerNonExist -eq "Y"){
+                Write-Host "`nChosen Y, script continuing"
+            }else{
+                throw "`nChosen N, script aborted"
+            }
+        }
+    }else{
+        Write-Host "`n-NoBackup specified, skipping call queue backup!"
+    }
+
     Write-Verbose "$InfoStringPrefix Importing the Excel data from $CQData"
     #Import the Call Queue data from the Excel file
     $CQDataImport = Import-Excel -Path $CQData -WorksheetName "Call Queues"
@@ -419,11 +442,10 @@ Function Import-NasCQ {
             $EnableTimeoutSharedVoicemailTranscription = "N"
         }
 
-
         #Create the call queue objects from the Excel data input
         $CQObj.ResourceAccountUPN = $x.ResourceAccountUPN
         #$CQObj.CleanedRAName = $x.CleanedName
-        $CQObj.Name = $x.CleanedName
+        $CQObj.Name = $x.CallQueueName
         $CQObj.Prefix = $x.Prefix
         $CQObj.TenantDomain = $($TenantDomain)
         $CQObj.LanguageID = $x.LanguageID
@@ -460,9 +482,7 @@ Function Import-NasCQ {
             Write-Verbose "$InfoStringPrefix Phone Numbers imported: $($CQObj.PhoneNumber)"
         }
         
-
         # Checking to see if we need to build this
-
         if(!($NoRA)){
             $ResourceAccount = $null
             $ResourceAccount = New-NasTeamsResourceAccount -CallQueue $CQObj
@@ -471,7 +491,7 @@ Function Import-NasCQ {
 
         #Create the call queues only if the parameter is specified, otherwise only import to the object
         if(!($NoCreateCQ)){
-                if(!(Get-CsCallQueue -NameFilter "$($CQObj.Name)")){
+                if(!(Get-CsCallQueue -NameFilter "$($CQObj.Name)" -WarningAction SilentlyContinue)){
                     Write-Verbose "$InfoStringPrefix $CQTypeAccountString Call Queue doesn't exist: $($x.Name). Creating the call queue."
                     #Call the New-NasTeamsCallQueue function to create the call queue
                     $CallQueue = $null
@@ -488,8 +508,10 @@ Function Import-NasCQ {
                     $CallQueue
                 }else{
                     $CallQueue = $null
-                    $CallQueue = Get-CsCallQueue -NameFilter "$($CQObj.Name)"
-                    Write-Warning "$InfoStringPrefix $CQTypeAccountString Call Queue already exists: $($x.Name) exists as $($CQObj.Name). Checking resource account association."
+                    $CallQueue = Get-CsCallQueue -NameFilter "$($CQObj.Name)" -WarningAction SilentlyContinue
+                    Write-Verbose "$InfoStringPrefix $CQTypeAccountString Call Queue already exists: $($x.Name) exists as $($CQObj.Name). Checking resource account association."
+                    Write-Host "Call Queue: ""$($CQObj.Name)""..." -NoNewline
+                    Write-Host " ALREADY EXISTS" -ForegroundColor Green
                     if(!($NoRAAssociation)){
                         if(!(Get-CsOnlineApplicationInstanceAssociation -Identity $ResourceAccount.ObjectID -ErrorAction SilentlyContinue)){
                             Write-Verbose "$InfoStringPrefix $RATypeAccountString Resource account $($ResourceAccount.UserPrincipalName) not associated"
@@ -717,6 +739,8 @@ function New-NasTeamsResourceAccount {
                 }
                 $NewRA = New-CsOnlineApplicationInstance @RAParameters
                 Write-Verbose "$InfoStringPrefix $RATypeAccountString $($RAAccountUPN) - Account has now been created."
+                Write-Host "Resource Account: ""$($RAAccountUPN)""..." -NoNewline
+                Write-Host " CREATED" -ForegroundColor Green
 
                 #Write-Verbose "$InfoStringPrefix $RATypeAccountString $($RAAccountUPN) - Account is available for use, moving to call queue checks."
                 if($CallQueue){
@@ -726,7 +750,9 @@ function New-NasTeamsResourceAccount {
         #The Resource Account exists, skip to creating the call queue    
         }Else{
             #$NewRA = Get-CsOnlineApplicationInstance -Identity $RAAccountUPN
-            Write-Warning "$InfoStringPrefix $RATypeAccountString $($RAAccountUPN) - Account already exists, skipping to call queue creation."
+            Write-Verbose "$InfoStringPrefix $RATypeAccountString $($RAAccountUPN) - Account already exists, skipping to call queue creation."
+            Write-Host "Resource Account: ""$($RAAccountUPN)""..." -NoNewline
+            Write-Host " ALREADY EXISTS" -ForegroundColor Green
             $CallQueue.ResourceAccount += $NewRA.objectID
         }
 
@@ -1141,7 +1167,7 @@ function New-NasTeamsCallQueue {
         }
 
         #Create the call queue from the above parameters
-        $NewCallQueue = New-CsCallQueue @NewCQParameters -ErrorAction Stop
+        $NewCallQueue = New-CsCallQueue @NewCQParameters -ErrorAction Stop -WarningAction SilentlyContinue
 
         Write-Verbose "Setting Timeout Target: $($NewCQParameters.TimeoutActionTarget) Setting Overflow Target: $($NewCQParameters.OverflowActionTarget)"
 
@@ -1159,13 +1185,17 @@ function New-NasTeamsCallQueue {
         }
         
         Write-Verbose "$InfoStringPrefix $CQTypeAccountString $($CallQueue.Name) - Call queue has now been created."
+        Write-Host "Call Queue: ""$($CallQueue.Name)""..." -NoNewline
+        Write-Host " CREATED" -ForegroundColor Green
         #Pass the call queue ObjectID back to the GUID of the call queue object
         $CallQueue.guid = $NewCallQueue.Identity
     }else{
 
         #The call queue exists, skip to associating the resource account 
-        $NewCallQueue = Get-CsCallQueue -NameFilter "$($CallQueue.Name)"
+        $NewCallQueue = Get-CsCallQueue -NameFilter "$($CallQueue.Name)" -WarningAction SilentlyContinue
         Write-Verbose "$InfoStringPrefix $CQTypeAccountString $($CallQueue.Name) - Call queue already exists, skipping to resource account association."
+        Write-Host "Call Queue: ""$($CallQueue.Name)""..." -NoNewline
+        Write-Host " ALREADY EXISTS" -ForegroundColor Green
         $CallQueue.guid = $NewCallQueue.Identity
     }
 
@@ -2079,4 +2109,99 @@ function Convert-NasImportMusicFile{
             Write-Verbose "Folder: $rootfolder\$($musicid.identity) doesn't exist"
         }
     }
+}
+
+function Backup-TeamsCallQueues{
+
+    [CmdletBinding()]
+    param (
+        [Parameter(ValueFromPipeline)]
+        [string]
+        $CQData
+    )
+    
+    #Create the path for the exports
+    $exportPath = $CQData | Split-Path -Parent
+
+    $existingCallQueuesBackup = Get-CsCallQueue -WarningAction SilentlyContinue
+    $existingCallQueuesBackup | Export-Clixml -Path "$exportPath\Teams-BackupCallQueuesConfig.xml"
+    $existingCallQueuesImport = Import-Clixml -Path "$exportPath\Teams-BackupCallQueuesConfig.xml"
+
+    $existingCallQueuesObject = foreach($existingCallQueue in $existingCallQueuesImport){
+
+        #Null the vars each time
+        $existingCallQueueRoutingMethod,$existingCallQueueAgents,$existingCallQueueOverflowActionTarget,$existingCallQueueTimeoutActionTarget,$existingCallQueueResourceAccountID = $null
+
+        #Grab the routing method for the export
+        $existingCallQueueRoutingMethod = $existingCallQueue.RoutingMethod.Value
+
+        #Grab the agents, multiple agents will be joined with a ","
+        if($existingCallQueue.Agents.ObjectID){
+            $existingCallQueueAgents = $existingCallQueue.Agents.ObjectID -join ","
+        }else{
+            $existingCallQueueAgents = "NO AGENTS"
+        }
+
+        if($existingCallQueue.DistributionLists.guid){
+            $existingCallQueueDistributionLists = $existingCallQueue.DistributionLists.guid
+        }else{
+            $existingCallQueueDistributionLists = "NO DISTRIBUTION LISTS"
+        }
+
+        #Grab the overflow action target and convert to string
+        if($existingCallQueue.OverflowActionTarget.Id){
+            $existingCallQueueOverflowActionTarget = $existingCallQueue.OverflowActionTarget.Id.ToString()
+        }else{
+            $existingCallQueueOverflowActionTarget = "NO TARGET"
+        }
+
+        #Grab the timeout action target and convert to string
+        if($existingCallQueue.TimeoutActionTarget.Id){
+            $existingCallQueueTimeoutActionTarget = $existingCallQueue.TimeoutActionTarget.Id.ToString()
+        }else{
+            $existingCallQueueTimeoutActionTarget = "NO TARGET"
+        }
+
+        #Grab the resource account ID(s)
+        if($existingCallQueue.ApplicationInstances){
+            $existingCallQueueResourceAccountID = $existingCallQueue.ApplicationInstances -join ","
+        }else{
+            $existingCallQueueResourceAccountID = "NO RESOURCE ACCOUNT"
+        }
+
+        [PSCustomObject]@{
+            Name = $existingCallQueue.Name
+            RoutingMethod = $existingCallQueueRoutingMethod
+            Agents = $existingCallQueueAgents
+            DistributionLists = $existingCallQueueDistributionLists
+            AllowOptOut = $existingCallQueue.AllowOptOut
+            ConferenceMode = $existingCallQueue.ConferenceMode
+            PresenceBasedRouting = $existingCallQueue.PresenceBasedRouting
+            AgentAlertTime = $existingCallQueue.AgentAlertTime
+            LanguageID = $existingCallQueue.languageID
+            OverflowThreshold = $existingCallQueue.OverflowThreshold
+            OverflowAction = $existingCallQueue.OverflowAction
+            OverflowActionTarget = $existingCallQueueOverflowActionTarget
+            OverflowSharedVoicemailTextToSpeechPrompt = $existingCallQueue.OverflowSharedVoicemailTextToSpeechPrompt
+            OverflowSharedVoicemailAudioFilePrompt = $existingCallQueue.OverflowSharedVoicemailAudioFilePrompt
+            OverflowSharedVoicemailAudioFilePromptFileName = $existingCallQueue.OverflowSharedVoicemailAudioFilePromptFileName
+            EnableOverflowSharedVoicemailTranscription = $existingCallQueue.EnableOverflowSharedVoicemailTranscription
+            TimeoutThreshold = $existingCallQueue.TimeoutThreshold
+            TimeoutAction = $existingCallQueue.TimeoutAction
+            TimeoutActionTarget = $existingCallQueueTimeoutActionTarget
+            TimeoutSharedVoicemailTextToSpeechPrompt = $existingCallQueue.TimeoutSharedVoicemailTextToSpeechPrompt
+            TimeoutSharedVoicemailAudioFilePrompt = $existingCallQueue.TimeoutSharedVoicemailAudioFilePrompt
+            TimeoutSharedVoicemailAudioFilePromptFileName = $existingCallQueue.TimeoutSharedVoicemailAudioFilePromptFileName
+            EnableTimeoutSharedVoicemailTranscription = $existingCallQueue.EnableTimeoutSharedVoicemailTranscription
+            WelcomeMusicFileName = $existingCallQueue.WelcomeMusicFileName
+            UseDefaultMusicOnHold = $existingCallQueue.UseDefaultMusicOnHold
+            MusicOnHoldFileName = $existingCallQueue.MusicOnHoldFileName
+            ResourceAccountID = $existingCallQueueResourceAccountID
+        }
+    }
+
+    # Export to Excel
+    Write-Verbose "Exporting to Excel..."
+    $existingCallQueuesObject | Export-Excel -Path "$exportPath\Teams-BackupCallQueues.xlsx" -BoldTopRow -AutoSize
+
 }
