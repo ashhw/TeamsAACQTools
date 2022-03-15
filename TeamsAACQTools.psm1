@@ -1324,17 +1324,21 @@ function Import-NasAACQData {
         [Parameter()]
         [string]$rootFolder,
         [parameter()]
-        [switch]$Interactive,
+        [switch]$interactive,
         [parameter()]
         [string]$ffmpeglocation,
         [parameter()]
-        [string]$AARAPrefix,
+        [string]$aaRAPrefix,
         [parameter()]
-        [string]$CQRAPrefix,
+        [string]$cqRAPrefix,
         [parameter()]
-        [string]$TenantDomain,
+        [string]$tenantDomain,
         [Parameter()]
-        [switch]$SkipAudio
+        [switch]$skipAudio,
+        [parameter()]
+        [string]$cqNamePrefix,
+        [parameter()]
+        [string]$aaNamePrefix
     )
 
     Write-Host "`n----------------------------------------------------------------------------------------------
@@ -1490,8 +1494,19 @@ function Import-NasAACQData {
 
         # Let's create the 'cleaned' name, ready for the Teams import
         Write-Verbose "Cleaning the imported name to remove special characters"
-        $CleanedWorkflowName = Remove-StringSpecialCharacter -String $_.Name -SpecialCharacterToKeep " "
+        $CleanedWorkflowString = Remove-StringSpecialCharacter -String $_.Name -SpecialCharacterToKeep " "
 
+        #Null the vars before starting
+        $aaNameNoSpaces,$AutoAttendantName,$CleanedWorkflowSplit,$CleanedWorkflowLastWordRemoved,$CleanedWorkflowName = $null
+
+        # Remove the last word from the name as most have a suffix
+        if($_.Name -like "*queue" -or $_.Name -like "*RG" -or $_.Name -like "*(Q)" -or $_.Name -like "*RG Queue" -or $_.Name -like "* Q"){
+            $CleanedWorkflowSplit = $CleanedWorkflowString.Split(" ")
+            $CleanedWorkflowLastWordRemoved = [string]$CleanedWorkflowSplit[0..($CleanedWorkflowSplit.count-2)]
+            $CleanedWorkflowName = "{0}{1}" -f $($CleanedWorkflowLastWordRemoved -replace '\s+', ' ')," AA"
+        }else{
+            $CleanedWorkflowName = "{0}{1}" -f $($CleanedWorkflowString -replace '\s+', ' ')," AA"
+        }
         if(!($AARAPrefix)){
             #Set the resource account prefix
             $AARAPrefix = "raaa-cc-lll-"
@@ -1500,10 +1515,23 @@ function Import-NasAACQData {
         # Need to clean the display name and but keep spaces, resource accounts need spaces removing
         $ResourceAccountUPN = "{0}{1}@{2}" -f $AARAPrefix, $($CleanedWorkflowName.Replace(" ","")), $($TenantDomain.Replace(" ",""))
 
+        # If the AA prefix is specified, example: Prefix: "aa-gb-pink-" Workflow: "My Workflow"
+        # "My Workflow" changes to "aa-gb-pink-MyWorkFlow"
+        if($aaNamePrefix){
+            Write-Verbose "aaNamePrefix specified, setting value as $aanameprefix"
+            $aaNameNoSpaces = $CleanedWorkflowName.replace(" ","")
+            $AutoAttendantName = "$aaNamePrefix$aaNameNoSpaces"
+            Write-Verbose "Workflow name set to $AutoAttendantName"
+        }else{
+            Write-verbose "No aaNamePrefix specified, leaving as is"
+            $AutoAttendantName = $CleanedWorkflowName
+        }
+
         Write-Verbose "Configuring the workflow object: $($_.Name) - $($_.Identity.InstanceId.Guid)"
         [PSCustomObject]@{
             Identity = $_.Identity.InstanceId.Guid
             ResourceAccountUPN = $ResourceAccountUPN
+            AutoAttendantName = $AutoAttendantName
             CleanedName = $CleanedWorkflowName
             SkypeName = $_.Name
             PhoneNumber = $LineURI
@@ -1850,8 +1878,21 @@ function Import-NasAACQData {
         # Remove underscores before cleaning the name
         $x.name = $x.name.replace("_"," ")
 
+        #Null the vars before starting
+        $cqNameNoSpaces,$CallQueueName,$CleanedQueueSplit,$CleanedQueueLastWordRemoved,$CleanedQueueName = $null
+
         # Clean the name but keep the spaces for user friendly display name
-        $CleanedQueueName = Remove-StringSpecialCharacter -String $x.Name -SpecialCharacterToKeep " "
+        Write-Verbose "Cleaning the imported name to remove special characters"
+        $CleanedQueueString = Remove-StringSpecialCharacter -String $x.Name -SpecialCharacterToKeep " "
+
+        # Remove the last word from the name as most have a suffix
+        if($x.Name -like "*queue" -or $x.Name -like "*RG" -or $x.Name -like "*(Q)" -or $x.Name -like "*RG Queue" -or $x.Name -like "* Q"){
+            $CleanedQueueSplit = $CleanedQueueString.Split(" ")
+            $CleanedQueueLastWordRemoved = [string]$CleanedQueueSplit[0..($CleanedQueueSplit.count-2)]
+            $CleanedQueueName = "{0}{1}" -f $($CleanedQueueLastWordRemoved -replace '\s+', ' ')," CQ"
+        }else{
+            $CleanedQueueName = "{0}{1}" -f $($CleanedQueueString -replace '\s+', ' ')," CQ"
+        }
 
         #If prefix is specified for bespoke requirements
         if(!($CQRAPrefix)){
@@ -1862,9 +1903,22 @@ function Import-NasAACQData {
         #Build the resource account upn for bespoke requirements
         $ResourceAccountUPN = "{0}{1}@{2}" -f $CQRAPrefix, $($CleanedQueueName.Replace(" ","")), $($TenantDomain.Replace(" ",""))
 
+        # If the AA prefix is specified, example: Prefix: "aa-gb-pink-" Queue: "My Queue"
+        # "My Queue" changes to "aa-gb-pink-MyQueue"
+        if($cqNamePrefix){
+            Write-Verbose "cqNamePrefix specified, setting value as $cqNamePrefix"
+            $cqNameNoSpaces = $CleanedQueueName.replace(" ","")
+            $CallQueueName = "$cqNamePrefix$cqNameNoSpaces"
+            Write-Verbose "Call queue name set to $CallQueueName"
+        }else{
+            Write-verbose "No cqNamePrefix specified, leaving as is"
+            $CallQueueName = $CleanedQueueName
+        }
+
         $returncqobj = [PSCustomObject][ordered]@{
             QueueID = $x.Identity.InstanceId.Guid
             ResourceAccountUPN = $ResourceAccountUPN
+            CallQueueName = $CallQueueName
             CleanedName = $CleanedQueueName
             SkypeName = $x.Name
             LanguageID = $CQLanguageID
