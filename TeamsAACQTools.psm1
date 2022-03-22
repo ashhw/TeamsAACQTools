@@ -725,8 +725,6 @@ function New-NasTeamsResourceAccount {
 
         $RAAccountUPN = $CallQueue.ResourceAccountUPN
 
-        #(Get-CsCallQueue -WarningAction SilentlyContinue).where({$_.identity -ne '0362bd89-d0d5-41a2-9564-8a184c8a084f'}) | % { $_.ApplicationInstances | % { Remove-CsOnlineApplicationInstanceAssociation -Identities  $_ }; $_ | Remove-CsCallQueue }
-
         $NewRA = Get-CsOnlineApplicationInstance -Identity $RAAccountUPN -ErrorAction SilentlyContinue
         if(!($NewRA)){
                 Write-Verbose "$($InfoStringPrefix) $($RATypeAccountString) $($RAAccountUPN) - Account doesn't exist, moving to creation."
