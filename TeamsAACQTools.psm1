@@ -2203,5 +2203,6 @@ function Backup-TeamsCallQueues{
     # Export to Excel
     Write-Verbose "Exporting to Excel..."
     $existingCallQueuesObject | Export-Excel -Path "$exportPath\Teams-BackupCallQueues.xlsx" -BoldTopRow -AutoSize
+    Write-Host "Exported to: $exportPath\Teams-BackupCallQueues.xlsx"
 
 }
