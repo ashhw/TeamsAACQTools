@@ -274,6 +274,225 @@ function Confirm-InstalledModule {
     }
     
 }
+Function Import-NasAA {
+
+    param (
+        # Auto Attendant data import
+        [Parameter(Mandatory=$true,ValueFromPipeline)]
+        [String]$AAData,
+
+        #Give the user the option to install the required modules
+        [switch]$InstallModules,
+
+        #Create the Auto Attendants with no prompts
+        [switch]$NoCreateAA,
+
+        [switch]$NoRA,
+
+        [switch]$NoBackup
+    )
+
+    #Define Transcript Log Files 
+    #$logfile = (Get-Date).tostring("yyyyMMdd-hhmmss")
+    #$transcriptfile = (New-Item -itemtype File -Path ".\" -Name ($logfile + ".log"))
+    #Start-Transcript -Path $transcriptfile
+    #Write-Host "Transcript logging started $($transcriptfile)"
+
+    $errorStringPrefix = "[ERROR]"
+    $InfoStringPrefix = "[INFO]"
+    $RATypeAccountString = ":: RESOURCE ACCOUNT ::"
+
+    Write-Host "`n----------------------------------------------------------------------------------------------
+    `n TeamsAACQTools - Ash Ward - Nasstar
+    `n----------------------------------------------------------------------------------------------" -ForegroundColor Yellow
+
+    #Interactive - InstallModules specified, guide the user through the module installation
+    if($InstallModules){
+        Write-Verbose "$InfoStringPrefix Checking required modules are installed."
+
+        #Check if the ImportExcel module is installed
+        if (Get-InstalledModule -Name ImportExcel) {
+            Write-Verbose "$InfoStringPrefix ImportExcel module exists, proceeding."
+        } else {
+            Write-Error "$errorStringPrefix ImportExcel module does not exist"
+            Write-Host "To continue a module is required, would you like to install the ImportExcel module?"
+            $Answer = Read-Host "Enter Y or N"
+            if($Answer -eq 'Y'){
+                Write-Host "Install-Module ImportExcel"
+            }
+            if($Answer -eq 'N'){
+                Write-Verbose "$InfoStringPrefix Function stopped due to ImportExcel module requirement."
+                break
+            }
+        }
+    
+        #Check if the MicrosoftTeams module is installed
+        if (Get-InstalledModule -Name MicrosoftTeams) {
+            Write-Verbose "$InfoStringPrefix MicrosoftTeams module exists, proceeding."
+        } else {
+            Write-Error "$errorStringPrefix MicrosoftTeams module does not exist"
+            Write-Host "To continue a module is required, would you like to install the MicrosoftTeams module?"
+            $Answer = Read-Host "Enter Y or N"
+            if($Answer -eq 'Y'){
+                Write-Host "Install-Module MicrosoftTeams"
+            }
+            if($Answer -eq 'N'){
+                Write-Verbose "$InfoStringPrefix Function stopped due to MicrosoftTeams module requirement."
+                break
+            }
+        }
+    }
+
+    # Non-Interactive - Check Teams module is installed
+    Confirm-InstalledModule -Module MicrosoftTeams -moduleName "Microsoft Teams module"
+
+    # Non-Interactive - Check Excel module is installed
+    Confirm-InstalledModule -Module ImportExcel -moduleName "ImportExcel module"
+    
+    #Check we are connected to Teams, if not, prompt user to connect
+    Write-Verbose "Checking if there is an existing Teams PowerShell session"
+    if(!(Get-CsTenant)){
+        throw "No existing Teams PowerShell sesssion, please run ""Connect-MicrosoftTeams"" to connect to the Teams"
+    }else{
+        Write-Host "`nChecking Teams PowerShell session..." -NoNewline
+        Write-Host " CONNECTED" -ForegroundColor Green
+    }
+
+    if(!($NoBackup)){
+        Write-Host "`nChecking if there are any Auto Attendants present in the Teams tenant..." -NoNewline
+        if(Get-CsCallQueue -WarningAction SilentlyContinue){
+            Write-Host " FOUND AUTO ATTENDANTS" -ForegroundColor Green
+            Write-Host "`nDisplaying Auto Attendants"
+            Write-Host "--------------------------"
+            (Get-CsCallQueue -WarningAction SilentlyContinue).Name
+            $AnswerExist = Read-Host "`nTo backup all Auto Attendants, press Y, otherwise press N to exit"
+            if($AnswerExist -eq "Y"){
+                Write-Host "`nChosen Y, Auto Attendant backup starting"
+            }else{
+                throw "`nChosen N, script aborted"
+            }
+            Backup-TeamsCallQueues -CQData $CQData
+            Write-Host "`nAuto Attendants backed up, please check the data before moving on"
+            $disclaimerAnswerExist = Read-Host "`nDISCLAIMER: ARE YOU SURE YOU WISH TO CONTINUE? Y or N"
+            if($disclaimerAnswerExist -eq "Y"){
+                Write-Host "`nChosen Y, script continuing"
+            }else{
+                throw "`nChosen N, script aborted"
+            }
+        }else{
+            Write-Host " NOT FOUND" -ForegroundColor Yellow
+            $disclaimerAnswerNonExist = Read-Host "`nDISCLAIMER: ARE YOU SURE YOU WISH TO CONTINUE? Y or N"
+            if($disclaimerAnswerNonExist -eq "Y"){
+                Write-Host "`nChosen Y, script continuing"
+            }else{
+                throw "`nChosen N, script aborted"
+            }
+        }
+    }else{
+        Write-Host "`n-NoBackup specified, skipping Auto Attendant backup!"
+    }
+
+    Write-Verbose "$InfoStringPrefix Importing the Excel data from $AAData"
+    #Import the Auto Attendant data from the Excel file
+    $AADataImport = Import-Excel -Path $AAData -WorksheetName "Auto Attendants"
+
+    #Loop through and create the Auto Attendant objects
+    ForEach($x in $AADataImport) {
+
+        $AAObj = [NasAA]::new()
+
+        #Create the Auto Attendant objects from the Excel data input
+        $AAObj.ResourceAccountUPN = $x.ResourceAccountUPN
+        #$AAObj.CleanedRAName = $x.CleanedName
+        $AAObj.Name = $x.CallQueueName
+        $AAObj.Prefix = $x.Prefix
+        $AAObj.TenantDomain = $($TenantDomain)
+        $AAObj.LanguageID = $x.LanguageID
+        $AAObj.UseDefaultMusicOnHold = $x.UseDefaultMusicOnHold
+        $AAObj.DistributionLists = $x.DistributionLists
+        $AAObj.ChannelId = $x.ChannelId
+        $AAObj.ChannelUserObjectId = $x.ChannelUserObjectId
+        $AAObj.OboResourceAccountIds = $x.OboResourceAccountIds
+        $AAObj.ConferenceMode = $x.ConferenceMode
+        $AAObj.RoutingMethod = $x.RoutingMethod
+        $AAObj.PresenceBasedRouting = $x.PresenceBasedRouting
+        $AAObj.AllowOptOut = $x.AllowOptOut
+        $AAObj.AgentAlertTime = $x.AgentAlertTime
+        $AAObj.OverflowThreshold = $x.OverflowThreshold
+        $AAObj.OverflowAction = $x.OverflowAction
+        $AAObj.OverflowActionTarget = $x.OverflowActionTarget
+        $AAObj.EnableOverflowSharedVoicemailTranscription = $EnableOverflowSharedVoicemailTranscription
+        $AAObj.OverflowSharedVoicemailAudioFilePrompt = $x.OverflowSharedVoicemailAudioFilePrompt
+        $AAObj.OverflowSharedVoicemailTextToSpeechPrompt = $x.OverflowSharedVoicemailTextToSpeechPrompt
+        $AAObj.TimeoutThreshold = $x.TimeoutThreshold
+        $AAObj.TimeoutAction = $x.TimeoutAction
+        $AAObj.TimeoutActionTarget = $x.TimeoutActionTarget
+        $AAObj.EnableTimeoutSharedVoicemailTranscription = $EnableTimeoutSharedVoicemailTranscription
+        $AAObj.TimeoutSharedVoicemailAudioFilePrompt = $x.TimeoutSharedVoicemailAudioFilePrompt
+        $AAObj.TimeoutSharedVoicemailTextToSpeechPrompt = $x.TimeoutSharedVoicemailTextToSpeechPrompt
+        $AAObj.MusicOnHoldAudioFilePath = $x.MusicOnHoldAudioFilePath
+        $AAObj.WelcomeMusicAudioFilePath = $x.WelcomeMusicAudioFilePath
+
+        #Only populate the phone number if it exists otherwise it causes an error
+        if($x.PhoneNumber){
+
+            #Split multiple phone numbers for multiple resource accounts
+            $AAObj.PhoneNumber = $x.PhoneNumber.split(",")
+            Write-Verbose "$InfoStringPrefix Phone Numbers imported: $($AAObj.PhoneNumber)"
+        }
+        
+        # Checking to see if we need to build this
+        if(!($NoRA)){
+            $ResourceAccount = $null
+            $ResourceAccount = New-NasTeamsResourceAccount -CallQueue $AAObj
+            #$ResourceAccount
+        }
+
+        #Create the Auto Attendants only if the parameter is specified, otherwise only import to the object
+        if(!($NoCreateCQ)){
+                if(!(Get-CsCallQueue -NameFilter "$($AAObj.Name)" -WarningAction SilentlyContinue)){
+                    Write-Verbose "$InfoStringPrefix $CQTypeAccountString Auto Attendant doesn't exist: $($x.Name). Creating the Auto Attendant."
+                    #Call the New-NasTeamsCallQueue function to create the Auto Attendant
+                    $CallQueue = $null
+                    $CallQueue = New-NasTeamsAutoAttendant -AutoAttendant $AAObj 
+                    if(!($NoRAAssociation)){
+                        Write-Verbose "$InfoStringPrefix $CQTypeAccountString Auto Attendant: $($AAObj.Name) created, associating the resource account $($ResourceAccount.UserPrincipalName)"
+                        $RAAssociation = $null
+                        $RAAssociation = New-NasTeamsResourceAccountAssociation -CallQueue $CallQueue -ResourceAccountObjectID $ResourceAccount.ObjectID -ErrorAction Stop
+                        Write-Verbose "$InfoStringPrefix $RATypeAccountString Resource account $($ResourceAccount.UserPrincipalName) has now been associated to $($AAObj.Name)"
+                    }else{
+                        Write-Verbose "$InfoStringPrefix $RATypeAccountString `$NoRAAssociation specified, skipping resource account association"
+                    }
+                    #Return Callqueue object
+                    $CallQueue
+                }else{
+                    $CallQueue = $null
+                    $CallQueue = Get-CsCallQueue -NameFilter "$($AAObj.Name)" -WarningAction SilentlyContinue
+                    Write-Verbose "$InfoStringPrefix $CQTypeAccountString Auto Attendant already exists: $($x.Name) exists as $($AAObj.Name). Checking resource account association."
+                    Write-Host "Auto Attendant: ""$($AAObj.Name)""..." -NoNewline
+                    Write-Host " ALREADY EXISTS" -ForegroundColor Green
+                    if(!($NoRAAssociation)){
+                        if(!(Get-CsOnlineApplicationInstanceAssociation -Identity $ResourceAccount.ObjectID -ErrorAction SilentlyContinue)){
+                            Write-Verbose "$InfoStringPrefix $RATypeAccountString Resource account $($ResourceAccount.UserPrincipalName) not associated"
+                            $RAAssociation = $null
+                            $RAAssociation = New-NasTeamsResourceAccountAssociation -CallQueue $CallQueue -ResourceAccountObjectID $ResourceAccount.ObjectID -ErrorAction Stop
+                            Write-Verbose "$InfoStringPrefix $RATypeAccountString Resource account $($ResourceAccount.UserPrincipalName) has now been associated to $($AAObj.Name)"
+                        }else{
+                            Write-Verbose "$InfoStringPrefix $CQTypeAccountString $($AAObj.Name) - Already associated with the following resource account $($ResourceAccount.UserPrincipalName)"
+                        }
+                    }else{
+                        Write-Verbose "$InfoStringPrefix $RATypeAccountString `$NoRAAssociation specified, skipping resource account association"
+                    }
+                }
+        }else{
+            Write-Verbose "$InfoStringPrefix Auto Attendant imported to memory: $($AAObj.Name)"
+            $AAObj
+        }
+    } # End import ForEach($x in $AADataImport)
+
+    #Stop-Transcript
+    Write-Host "Auto Attendant build completed, please refer to the transcript file for any errors."
+}
 Function Import-NasCQ {
     <#
     .SYNOPSIS
