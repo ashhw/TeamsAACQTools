@@ -11,23 +11,23 @@ Import-NasAACQData [[-rootFolder] <string>] [[-ffmpeglocation] <string>] [[-Tena
 Import-NasAACQData -rootFolder <"Location of RgsImportExport folder"> -ffmpeglocation <"Location of ffmpeg.exe"> -TenantDomain <"Tenant Domain"> -CQRAPrefix racq_ -AARAPrefix raaa_
 ```
 ### Parameters
-**-rootFolder**
+**-rootFolder**  
 Specify the path to the RgsImportExport folder from the Skype for Business RGS export.
 e.g. "C:\Folder\SomeFolder\RgsImportExport"
 
 **-Interactive**  
 If there is a duplicate Music on Hold entry in the Skype for Business Response Group configuration, i.e. Two workflows target the same call queue (therefore using call queue Music on Hold). Use -Interactive parameter to be prompted with an interface to choose the correct Music on Hold to use.
 
-**-CQRAPrefix [OPTIONAL]**  
+**-CQRAPrefix (OPTIONAL)**  
 Specify the prefix of the call queue resource account. i.e. racq_
 
-**-AARAPrefix [OPTIONAL]**  
+**-AARAPrefix (OPTIONAL)**  
 Specify the prefix of the call queue resource account. i.e. raaa_
 
-**-cqReplacementSuffix [OPTIONAL]**
+**-cqReplacementSuffix (OPTIONAL)**  
 Specify the suffix for the Call Queue name. i.e. "Queue"
 
-**-aaReplacementSuffix [OPTIONAL]**
+**-aaReplacementSuffix (OPTIONAL)**  
 Specify the suffix for the Auto Attendant name. i.e. "Attendant"
 
 **-TenantDomain**  
