@@ -507,14 +507,14 @@ function Get-NASObjectGuid {
     }
     process {
         try{ 
-            $TypeObj = (Get-CsOnlineUser -Identity $TargetName | Get-Member)[0].typename
+            $TypeObj = (Get-CsOnlineUser -Identity $TargetName -ErrorAction SilentlyContinue | Get-Member)[0].typename
             Write-Verbose "Raw Data = $TypeObj"
             #Try and get the user
             if($TypeObj -like "*UserMas"){
-                $objGuid = (Get-CsOnlineUser -Identity $TargetName).Identity
+                $objGuid = (Get-CsOnlineUser -Identity $TargetName -ErrorAction SilentlyContinue).Identity
                 Write-Verbose "Converted New way: $objGuid"
             }else{
-                $objGuid = (Get-CsOnlineUser -Identity $TargetName).id.split(",")[0].split("=")[1]
+                $objGuid = (Get-CsOnlineUser -Identity $TargetName -ErrorAction SilentlyContinue).id.split(",")[0].split("=")[1]
                 Write-Verbose "Converted Old way: $objGuid"
             }
             
