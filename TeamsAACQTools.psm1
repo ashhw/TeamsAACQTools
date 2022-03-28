@@ -136,23 +136,33 @@ class NasCQ {
 class NasAA {
     
     [string]$Name
-    [String]$LanguageID
-    [string]$TimeZoneId
+    [string]$ResourceAccountUPN
+    #[String]$LanguageID
+    #[string]$TimeZoneId
 
-    [ValidatePattern('^*.*')]
-    [string]$TenantDomain
-    [string]$Prefix
+    #[ValidatePattern('^*.*')]
+    #[string]$TenantDomain
+    #[string]$Prefix
     [guid]$GUID
 
-    [PSCustomObject]$DefaultCallFlow
-    [PSCustomObject]$CallFlows
-    [PSCustomObject]$CallHandlingAssociations
-    [switch]$EnableVoiceResponse
-    [PSCustomObject]$ExclusionScope
-    [string[]]$GreetingsSettingAuthorizedUsers
-    [PSCustomObject]$InclusionScope
-    [PSCustomObject]$Operator
-    [string]$VoiceId
+    [string]$DefaultTargetCallQueue
+
+    # Object ID(s) of the Resource Account associated with this call queue.
+    [String[]]$ResourceAccount
+
+    # List of phone numbers associated with this call queue
+    [ValidatePattern('^\+.*')]
+    [string[]]$PhoneNumber
+
+    #[PSCustomObject]$DefaultCallFlow
+    #[PSCustomObject]$CallFlows
+    #[PSCustomObject]$CallHandlingAssociations
+    #[switch]$EnableVoiceResponse
+    #[PSCustomObject]$ExclusionScope
+    #[string[]]$GreetingsSettingAuthorizedUsers
+    #[PSCustomObject]$InclusionScope
+    #[PSCustomObject]$Operator
+    #[string]$VoiceId
 
 }
 class NasCQAgent {
@@ -492,35 +502,33 @@ function Get-NASObjectGuid {
     
     )
     Begin {
-        Write-Verbose "Looking for object GUIDs to set Overflow/Timeout action"
+        Write-Verbose "Looking for object GUIDs"
         $foundInvalid = $false
     }
     process {
-        ForEach-Object {
-            try{ 
-                $TypeObj = (Get-CsOnlineUser -Identity $_ | Get-Member)[0].typename
-                Write-Verbose "Raw Data = $TypeObj"
-                #Try and get the user
-                if($TypeObj -like "*UserMas"){
-                    $objGuid = (Get-CsOnlineUser -Identity $_).Identity
-                    Write-Verbose "Converted New way: $objGuid"
-                }else{
-                    $objGuid = (Get-CsOnlineUser -Identity $_).id.split(",")[0].split("=")[1]
-                    Write-Verbose "Converted Old way: $objGuid"
-                }
-                
-            } Catch {
-                Write-Error "Unable to find object $($TargetName)"
-                $foundInvalid = $true
-            }
-            if($objGuid){
-                Write-Verbose "Building the object: $($TargetName) - ObjectID: $($objGuid)"
-                #Create the NasCQAgent object with the agents UPN and objectID
-                [NasObjLookup]::new($TargetName,$objGuid)
-                Write-Verbose "Object built: $($TargetName) - ObjectID: $($objGuid)"
+        try{ 
+            $TypeObj = (Get-CsOnlineUser -Identity $TargetName | Get-Member)[0].typename
+            Write-Verbose "Raw Data = $TypeObj"
+            #Try and get the user
+            if($TypeObj -like "*UserMas"){
+                $objGuid = (Get-CsOnlineUser -Identity $TargetName).Identity
+                Write-Verbose "Converted New way: $objGuid"
             }else{
-                Write-Error "Object doesn't exist $($TargetName)"
+                $objGuid = (Get-CsOnlineUser -Identity $TargetName).id.split(",")[0].split("=")[1]
+                Write-Verbose "Converted Old way: $objGuid"
             }
+            
+        } Catch {
+            Write-Error "Unable to find object $($TargetName)"
+            $foundInvalid = $true
+        }
+        if($objGuid){
+            Write-Verbose "Building the object: $($TargetName) - ObjectID: $($objGuid)"
+            #Create the NasCQAgent object with the agents UPN and objectID
+            [NasObjLookup]::new($TargetName,$objGuid)
+            Write-Verbose "Object built: $($TargetName) - ObjectID: $($objGuid)"
+        }else{
+            Write-Error "Object doesn't exist $($TargetName)"
         }
     }
     End{
@@ -1258,6 +1266,9 @@ Function Import-NasAA {
 
         [switch]$NoRA,
 
+        #Creates the basics for the auto attendant, RA, linking the call queue etc
+        [switch]$Wireframe,
+
         [switch]$NoBackup
     )
 
@@ -1329,18 +1340,18 @@ Function Import-NasAA {
 
     if(!($NoBackup)){
         Write-Host "`nChecking if there are any Auto Attendants present in the Teams tenant..." -NoNewline
-        if(Get-CsCallQueue -WarningAction SilentlyContinue){
+        if(Get-CsAutoAttendant -WarningAction SilentlyContinue){
             Write-Host " FOUND AUTO ATTENDANTS" -ForegroundColor Green
             Write-Host "`nDisplaying Auto Attendants"
             Write-Host "--------------------------"
-            (Get-CsCallQueue -WarningAction SilentlyContinue).Name
+            (Get-CsAutoAttendant -WarningAction SilentlyContinue).Name
             $AnswerExist = Read-Host "`nTo backup all Auto Attendants, press Y, otherwise press N to exit"
             if($AnswerExist -eq "Y"){
                 Write-Host "`nChosen Y, Auto Attendant backup starting"
             }else{
                 throw "`nChosen N, script aborted"
             }
-            Backup-TeamsCallQueues -CQData $CQData
+            Backup-TeamsAutoAttendants -AAData $AAData
             Write-Host "`nAuto Attendants backed up, please check the data before moving on"
             $disclaimerAnswerExist = Read-Host "`nDISCLAIMER: ARE YOU SURE YOU WISH TO CONTINUE? Y or N"
             if($disclaimerAnswerExist -eq "Y"){
@@ -1363,43 +1374,61 @@ Function Import-NasAA {
 
     Write-Verbose "$InfoStringPrefix Importing the Excel data from $AAData"
     #Import the Auto Attendant data from the Excel file
-    $AADataImport = Import-Excel -Path $AAData -WorksheetName "Auto Attendants"
+    $AAExcelImport = Import-Excel -Path $AAData -WorksheetName "Auto Attendants"
+    $CQExcelImport = Import-Excel -Path $AAData -WorksheetName "Call Queues" 
 
     #Loop through and create the Auto Attendant objects
-    ForEach($x in $AADataImport) {
+    ForEach($aa in $AAExcelImport) {
+
+        $DefaultTargetCallQueue,$DefaultTargetCallQueueRA = $null
+
+        if($aa.DefaultActionTargetQueue){
+            $DefaultTargetCallQueueRA = $CQExcelImport.where({$_.QueueID -eq $aa.DefaultActionTargetQueue}).ResourceAccountUPN
+            if(!([string]::isnullorempty($DefaultTargetCallQueueRA))){
+                Write-Verbose "Queue UPN is: $DefaultTargetCallQueueRA"
+                $DefaultTargetCallQueue = (Get-NASObjectGuid -TargetName $DefaultTargetCallQueueRA).ObjGuid.Guid
+                Write-Verbose "Setting the default target call queue on Auto Attendant: $($aa.AutoAttendantName)"
+                Write-Verbose "Default target call queue object ID: $DefaultTargetCallQueue"
+            }else{
+                Write-Verbose "Queue not available for target, skipping."
+            }
+        }else{
+            Write-Verbose "No target, skipping."
+        }
 
         $AAObj = [NasAA]::new()
 
         #Create the Auto Attendant objects from the Excel data input
-        $AAObj.ResourceAccountUPN = $x.ResourceAccountUPN
-        $AAObj.Name = $x.AutoAttendantName
-        $AAObj.PhoneNumber = $x.PhoneNumber
-        $AAObj.LanguageID = $x.LanguageID
-        $AAObj.TimeZone = $x.TimeZone
-        $AAObj.BusinessHoursID = $x.BusinessHoursID
-        $AAObj.DefaultAction = $x.DefaultAction
-        $AAObj.DefaultActionTargetQueue = $x.DefaultActionTargetQueue
-        $AAObj.DefaultActionTargetUri = $x.DefaultActionTargetUri
-        $AAObj.DefaultActionQuestions = $x.DefaultActionQuestions
-        $AAObj.NonBusinessHoursAction = $x.NonBusinessHoursAction
-        $AAObj.NonBusinessHoursActionAudioFilePrompt = $x.NonBusinessHoursActionAudioFilePrompt
-        $AAObj.NonBusinessHoursActionTextToSpeechPrompt = $x.NonBusinessHoursActionTextToSpeechPrompt
-        $AAObj.NonBusinessHoursActionQuestion = $x.NonBusinessHoursActionQuestion
-        $AAObj.NonBusinessHoursActionQueueID = $x.NonBusinessHoursActionQueueID
-        $AAObj.NonBusinessHoursActionUri = $x.NonBusinessHoursActionUri
-        $AAObj.HolidayAction = $x.HolidayAction
-        $AAObj.UseDefaultMusicOnHold = $x.UseDefaultMusicOnHold
-        $AAObj.CustomMusicOnHoldFileID = $x.CustomMusicOnHoldFileID
-        $AAObj.CustomMusicOnHoldFileName = $x.CustomMusicOnHoldFileName
-        $AAObj.MusicOnHoldAudioFilePath = $x.MusicOnHoldAudioFilePath        
+        $AAObj.ResourceAccountUPN = $aa.ResourceAccountUPN
+        $AAObj.Name = $aa.AutoAttendantName
+        $AAObj.DefaultTargetCallQueue = $DefaultTargetCallQueue
+        #$AAObj.PhoneNumber = $x.PhoneNumber
+        #$AAObj.LanguageID = $x.LanguageID
+        #$AAObj.TimeZone = $x.TimeZone
+        #$AAObj.BusinessHoursID = $x.BusinessHoursID
+        #$AAObj.DefaultAction = $x.DefaultAction
+        #$AAObj.DefaultActionTargetQueue = $x.DefaultActionTargetQueue
+        #$AAObj.DefaultActionTargetUri = $x.DefaultActionTargetUri
+        #$AAObj.DefaultActionQuestions = $x.DefaultActionQuestions
+        #$AAObj.NonBusinessHoursAction = $x.NonBusinessHoursAction
+        #$AAObj.NonBusinessHoursActionAudioFilePrompt = $x.NonBusinessHoursActionAudioFilePrompt
+        #$AAObj.NonBusinessHoursActionTextToSpeechPrompt = $x.NonBusinessHoursActionTextToSpeechPrompt
+        #$AAObj.NonBusinessHoursActionQuestion = $x.NonBusinessHoursActionQuestion
+        #$AAObj.NonBusinessHoursActionQueueID = $x.NonBusinessHoursActionQueueID
+        #$AAObj.NonBusinessHoursActionUri = $x.NonBusinessHoursActionUri
+        #$AAObj.HolidayAction = $x.HolidayAction
+        #$AAObj.UseDefaultMusicOnHold = $x.UseDefaultMusicOnHold
+        #$AAObj.CustomMusicOnHoldFileID = $x.CustomMusicOnHoldFileID
+        #$AAObj.CustomMusicOnHoldFileName = $x.CustomMusicOnHoldFileName
+        #$AAObj.MusicOnHoldAudioFilePath = $x.MusicOnHoldAudioFilePath        
 
         #Only populate the phone number if it exists otherwise it causes an error
-        if($x.PhoneNumber){
-
-            #Split multiple phone numbers for multiple resource accounts
-            $AAObj.PhoneNumber = $x.PhoneNumber.split(",")
-            Write-Verbose "$InfoStringPrefix Phone Numbers imported: $($AAObj.PhoneNumber)"
-        }
+        #if($x.PhoneNumber){
+        #
+        #    #Split multiple phone numbers for multiple resource accounts
+        #    $AAObj.PhoneNumber = $x.PhoneNumber.split(",")
+        #    Write-Verbose "$InfoStringPrefix Phone Numbers imported: $($AAObj.PhoneNumber)"
+        #}
         
         # Checking to see if we need to build this
         if(!($NoRA)){
@@ -1411,12 +1440,12 @@ Function Import-NasAA {
         #Create the Auto Attendants only if the parameter is specified, otherwise only import to the object
         if(!($NoCreateAA)){
                 if(!(Get-CsAutoAttendant -NameFilter "$($AAObj.Name)" -WarningAction SilentlyContinue)){
-                    Write-Verbose "$InfoStringPrefix $CQTypeAccountString Auto Attendant doesn't exist: $($x.Name). Creating the Auto Attendant."
+                    Write-Verbose "$InfoStringPrefix $CQTypeAccountString Auto Attendant doesn't exist: $($AAObj.Name). Creating the Auto Attendant."
                     #Call the New-NasTeamsAutoAttendant function to create the Auto Attendant
                     $AutoAttendant = $null
                     $AutoAttendant = New-NasTeamsAutoAttendant -AutoAttendant $AAObj
                     if(!($NoRAAssociation)){
-                        Write-Verbose "$InfoStringPrefix $CQTypeAccountString Auto Attendant: $($AAObj.Name) created, associating the resource account $($ResourceAccount.UserPrincipalName)"
+                        Write-Verbose "$InfoStringPrefix $AATypeAccountString Auto Attendant: $($AAObj.Name) created, associating the resource account $($ResourceAccount.UserPrincipalName)"
                         $RAAssociation = $null
                         $RAAssociation = New-NasTeamsResourceAccountAssociation -AutoAttendant $AutoAttendant -ResourceAccountObjectID $ResourceAccount.ObjectID -ErrorAction Stop
                         Write-Verbose "$InfoStringPrefix $RATypeAccountString Resource account $($ResourceAccount.UserPrincipalName) has now been associated to $($AAObj.Name)"
@@ -1428,7 +1457,7 @@ Function Import-NasAA {
                 }else{
                     $AutoAttendant = $null
                     $AutoAttendant = Get-CsAutoAttendant -NameFilter "$($AAObj.Name)" -WarningAction SilentlyContinue
-                    Write-Verbose "$InfoStringPrefix $CQTypeAccountString Auto Attendant already exists: $($x.Name) exists as $($AAObj.Name). Checking resource account association."
+                    Write-Verbose "$InfoStringPrefix $CQTypeAccountString Auto Attendant already exists: $($AAObj.Name) exists as $($AAObj.Name). Checking resource account association."
                     Write-Host "Auto Attendant: ""$($AAObj.Name)""..." -NoNewline
                     Write-Host " ALREADY EXISTS" -ForegroundColor Green
                     if(!($NoRAAssociation)){
@@ -1448,7 +1477,7 @@ Function Import-NasAA {
             Write-Verbose "$InfoStringPrefix Auto Attendant imported to memory: $($AAObj.Name)"
             $AAObj
         }
-    } # End import ForEach($x in $AADataImport)
+    } # End import ForEach($x in $AAExcelImport)
 
     #Stop-Transcript
     Write-Host "Auto Attendant build completed, please refer to the transcript file for any errors."
@@ -1474,7 +1503,7 @@ function Backup-TeamsAutoAttendants{
     param (
         [Parameter(ValueFromPipeline)]
         [string]
-        $CQData
+        $AAData
     )
     
     #Create the path for the exports
@@ -1482,85 +1511,86 @@ function Backup-TeamsAutoAttendants{
 
     $existingAutoAttendantsBackup = Get-CsAutoAttendant -WarningAction SilentlyContinue
     $existingAutoAttendantsBackup | Export-Clixml -Path "$exportPath\Teams-BackupAutoAttendantsConfig.xml"
-    $existingAutoAttendantsImport = Import-Clixml -Path "$exportPath\Teams-BackupAutoAttendantsConfig.xml"
+    $existingAutoAttendantsBackup
+    #$existingAutoAttendantsImport = Import-Clixml -Path "$exportPath\Teams-BackupAutoAttendantsConfig.xml"
 
-    $existingAutoAttendantsObject = foreach($existingAutoAttendant in $existingAutoAttendantsImport){
+    #$existingAutoAttendantsObject = foreach($existingAutoAttendant in $existingAutoAttendantsImport){
 
         #Null the vars each time
-        $existingAutoAttendantRoutingMethod,$existingAutoAttendantAgents,$existingAutoAttendantOverflowActionTarget,$existingAutoAttendantTimeoutActionTarget,$existingAutoAttendantResourceAccountID = $null
+        #$existingAutoAttendantRoutingMethod,$existingAutoAttendantAgents,$existingAutoAttendantOverflowActionTarget,$existingAutoAttendantTimeoutActionTarget,$existingAutoAttendantResourceAccountID = $null
 
         #Grab the routing method for the export
-        $existingAutoAttendantRoutingMethod = $existingAutoAttendant.RoutingMethod.Value
+        #$existingAutoAttendantRoutingMethod = $existingAutoAttendant.RoutingMethod.Value
 
         #Grab the agents, multiple agents will be joined with a ","
-        if($existingAutoAttendant.Agents.ObjectID){
-            $existingAutoAttendantAgents = $existingAutoAttendant.Agents.ObjectID -join ","
-        }else{
-            $existingAutoAttendantAgents = "NO AGENTS"
-        }
+        #if($existingAutoAttendant.Agents.ObjectID){
+        #    $existingAutoAttendantAgents = $existingAutoAttendant.Agents.ObjectID -join ","
+        #}else{
+        #    $existingAutoAttendantAgents = "NO AGENTS"
+        #}
+#
+        #if($existingAutoAttendant.DistributionLists.guid){
+        #    $existingAutoAttendantDistributionLists = $existingAutoAttendant.DistributionLists.guid
+        #}else{
+        #    $existingAutoAttendantDistributionLists = "NO DISTRIBUTION LISTS"
+        #}
+#
+        ##Grab the overflow action target and convert to string
+        #if($existingAutoAttendant.OverflowActionTarget.Id){
+        #    $existingAutoAttendantOverflowActionTarget = $existingAutoAttendant.OverflowActionTarget.Id.ToString()
+        #}else{
+        #    $existingAutoAttendantOverflowActionTarget = "NO TARGET"
+        #}
+#
+        ##Grab the timeout action target and convert to string
+        #if($existingAutoAttendant.TimeoutActionTarget.Id){
+        #    $existingAutoAttendantTimeoutActionTarget = $existingAutoAttendant.TimeoutActionTarget.Id.ToString()
+        #}else{
+        #    $existingAutoAttendantTimeoutActionTarget = "NO TARGET"
+        #}
+#
+        ##Grab the resource account ID(s)
+        #if($existingAutoAttendant.ApplicationInstances){
+        #    $existingAutoAttendantResourceAccountID = $existingAutoAttendant.ApplicationInstances -join ","
+        #}else{
+        #    $existingAutoAttendantResourceAccountID = "NO RESOURCE ACCOUNT"
+        #}
 
-        if($existingAutoAttendant.DistributionLists.guid){
-            $existingAutoAttendantDistributionLists = $existingAutoAttendant.DistributionLists.guid
-        }else{
-            $existingAutoAttendantDistributionLists = "NO DISTRIBUTION LISTS"
-        }
-
-        #Grab the overflow action target and convert to string
-        if($existingAutoAttendant.OverflowActionTarget.Id){
-            $existingAutoAttendantOverflowActionTarget = $existingAutoAttendant.OverflowActionTarget.Id.ToString()
-        }else{
-            $existingAutoAttendantOverflowActionTarget = "NO TARGET"
-        }
-
-        #Grab the timeout action target and convert to string
-        if($existingAutoAttendant.TimeoutActionTarget.Id){
-            $existingAutoAttendantTimeoutActionTarget = $existingAutoAttendant.TimeoutActionTarget.Id.ToString()
-        }else{
-            $existingAutoAttendantTimeoutActionTarget = "NO TARGET"
-        }
-
-        #Grab the resource account ID(s)
-        if($existingAutoAttendant.ApplicationInstances){
-            $existingAutoAttendantResourceAccountID = $existingAutoAttendant.ApplicationInstances -join ","
-        }else{
-            $existingAutoAttendantResourceAccountID = "NO RESOURCE ACCOUNT"
-        }
-
-        [PSCustomObject]@{
-            Name = $existingAutoAttendant.Name
-            RoutingMethod = $existingAutoAttendantRoutingMethod
-            Agents = $existingAutoAttendantAgents
-            DistributionLists = $existingAutoAttendantDistributionLists
-            AllowOptOut = $existingAutoAttendant.AllowOptOut
-            ConferenceMode = $existingAutoAttendant.ConferenceMode
-            PresenceBasedRouting = $existingAutoAttendant.PresenceBasedRouting
-            AgentAlertTime = $existingAutoAttendant.AgentAlertTime
-            LanguageID = $existingAutoAttendant.languageID
-            OverflowThreshold = $existingAutoAttendant.OverflowThreshold
-            OverflowAction = $existingAutoAttendant.OverflowAction
-            OverflowActionTarget = $existingAutoAttendantOverflowActionTarget
-            OverflowSharedVoicemailTextToSpeechPrompt = $existingAutoAttendant.OverflowSharedVoicemailTextToSpeechPrompt
-            OverflowSharedVoicemailAudioFilePrompt = $existingAutoAttendant.OverflowSharedVoicemailAudioFilePrompt
-            OverflowSharedVoicemailAudioFilePromptFileName = $existingAutoAttendant.OverflowSharedVoicemailAudioFilePromptFileName
-            EnableOverflowSharedVoicemailTranscription = $existingAutoAttendant.EnableOverflowSharedVoicemailTranscription
-            TimeoutThreshold = $existingAutoAttendant.TimeoutThreshold
-            TimeoutAction = $existingAutoAttendant.TimeoutAction
-            TimeoutActionTarget = $existingAutoAttendantTimeoutActionTarget
-            TimeoutSharedVoicemailTextToSpeechPrompt = $existingAutoAttendant.TimeoutSharedVoicemailTextToSpeechPrompt
-            TimeoutSharedVoicemailAudioFilePrompt = $existingAutoAttendant.TimeoutSharedVoicemailAudioFilePrompt
-            TimeoutSharedVoicemailAudioFilePromptFileName = $existingAutoAttendant.TimeoutSharedVoicemailAudioFilePromptFileName
-            EnableTimeoutSharedVoicemailTranscription = $existingAutoAttendant.EnableTimeoutSharedVoicemailTranscription
-            WelcomeMusicFileName = $existingAutoAttendant.WelcomeMusicFileName
-            UseDefaultMusicOnHold = $existingAutoAttendant.UseDefaultMusicOnHold
-            MusicOnHoldFileName = $existingAutoAttendant.MusicOnHoldFileName
-            ResourceAccountID = $existingAutoAttendantResourceAccountID
-        }
-    }
+        #[PSCustomObject]@{
+        #    Name = $existingAutoAttendant.Name
+        #    RoutingMethod = $existingAutoAttendantRoutingMethod
+        #    Agents = $existingAutoAttendantAgents
+        #    DistributionLists = $existingAutoAttendantDistributionLists
+        #    AllowOptOut = $existingAutoAttendant.AllowOptOut
+        #    ConferenceMode = $existingAutoAttendant.ConferenceMode
+        #    PresenceBasedRouting = $existingAutoAttendant.PresenceBasedRouting
+        #    AgentAlertTime = $existingAutoAttendant.AgentAlertTime
+        #    LanguageID = $existingAutoAttendant.languageID
+        #    OverflowThreshold = $existingAutoAttendant.OverflowThreshold
+        #    OverflowAction = $existingAutoAttendant.OverflowAction
+        #    OverflowActionTarget = $existingAutoAttendantOverflowActionTarget
+        #    OverflowSharedVoicemailTextToSpeechPrompt = $existingAutoAttendant.OverflowSharedVoicemailTextToSpeechPrompt
+        #    OverflowSharedVoicemailAudioFilePrompt = $existingAutoAttendant.OverflowSharedVoicemailAudioFilePrompt
+        #    OverflowSharedVoicemailAudioFilePromptFileName = $existingAutoAttendant.OverflowSharedVoicemailAudioFilePromptFileName
+        #    EnableOverflowSharedVoicemailTranscription = $existingAutoAttendant.EnableOverflowSharedVoicemailTranscription
+        #    TimeoutThreshold = $existingAutoAttendant.TimeoutThreshold
+        #    TimeoutAction = $existingAutoAttendant.TimeoutAction
+        #    TimeoutActionTarget = $existingAutoAttendantTimeoutActionTarget
+        #    TimeoutSharedVoicemailTextToSpeechPrompt = $existingAutoAttendant.TimeoutSharedVoicemailTextToSpeechPrompt
+        #    TimeoutSharedVoicemailAudioFilePrompt = $existingAutoAttendant.TimeoutSharedVoicemailAudioFilePrompt
+        #    TimeoutSharedVoicemailAudioFilePromptFileName = $existingAutoAttendant.TimeoutSharedVoicemailAudioFilePromptFileName
+        #    EnableTimeoutSharedVoicemailTranscription = $existingAutoAttendant.EnableTimeoutSharedVoicemailTranscription
+        #    WelcomeMusicFileName = $existingAutoAttendant.WelcomeMusicFileName
+        #    UseDefaultMusicOnHold = $existingAutoAttendant.UseDefaultMusicOnHold
+        #    MusicOnHoldFileName = $existingAutoAttendant.MusicOnHoldFileName
+        #    ResourceAccountID = $existingAutoAttendantResourceAccountID
+        #}
+    #}
 
     # Export to Excel
-    Write-Verbose "Exporting to Excel..."
-    $existingAutoAttendantsObject | Export-Excel -Path "$exportPath\Teams-BackupAutoAttendants.xlsx" -BoldTopRow -AutoSize
-    Write-Host "Exported to: $exportPath\Teams-BackupAutoAttendants.xlsx"
+    #Write-Verbose "Exporting to Excel..."
+    #$existingAutoAttendantsObject | Export-Excel -Path "$exportPath\Teams-BackupAutoAttendants.xlsx" -BoldTopRow -AutoSize
+    #Write-Host "Exported to: $exportPath\Teams-BackupAutoAttendants.xlsx"
 
 }
 function New-NasTeamsAutoAttendant {
@@ -1588,60 +1618,47 @@ function New-NasTeamsAutoAttendant {
         [switch]$force
     )
 
-    $OverflowUser = "RA_CQ_OVERFLOW@wardlabnet.onmicrosoft.com"
-    $Option1Acc = "TestUser@ward-corp.co.uk"
-
-    #Variables
-    $DisplayName = 'ModTestAutoAttendant'
-    $TenantDomain = 'wardlabnet.onmicrosoft.com'
-    $AAAppID = "ce933385-9390-45d1-9512-c8d228074e07"
-    $AAPrefix = "raaa_"
-
-    $errorStringPrefix = "[ERROR]"
+    #$errorStringPrefix = "[ERROR]"
     $InfoStringPrefix = "[INFO]"
     $AATypeAccountString = " :: AUTO ATTENDANT :: "
+    
+    #Null the vars
+    $targetCQID,$targetCQ,$menuOption = $null
 
-    # Options
+    # Configuration Variables
     $aaLanguage = 'en-GB'
     $aaTimezone = 'GMT Standard Time'
-    $greetingText = "Welcome to Test Lab"
-    $mainMenuText = "To talk to Sales, please press 1. To talk to User2 press 2."
-    $afterHoursText = "Sorry Test Lab is closed. Please call back during week days from 9AM to 5PM. Goodbye!"
-    $user1Id = (Get-CsOnlineUser -Identity $Option1Acc).Identity
-    $salesCQappinstance = (Get-CsOnlineUser -Identity $OverflowUser).Identity # one of the application instances associated to the Call Queue
-    $tr1 = New-CsOnlineTimeRange -Start 09:00 -End 17:00
-    Write-Verbose "$InfoStringPrefix $AATypeAccountString AA_$($DisplayName)@$TenantDomain - Configured Auto Attendant options"
+    $greetingText = "Temporary greeting text, please change before go-live."
+    $afterHoursText = "Temporary after hours text, please change before go-live."
 
-    # After hours
-    $afterHoursSchedule = New-CsOnlineSchedule -Name "After Hours" -WeeklyRecurrentSchedule -MondayHours @($tr1) -TuesdayHours @($tr1) -WednesdayHours @($tr1) -ThursdayHours @($tr1) -FridayHours @($tr1) -Complement
+    if(!([string]::IsNullOrEmpty($AutoAttendant.DefaultTargetCallQueue))){
+        $targetCQID = $AutoAttendant.DefaultTargetCallQueue
+        $targetCQ = New-CsAutoAttendantCallableEntity -Identity $targetCQID -Type applicationendpoint
+        $menuOption = New-CsAutoAttendantMenuOption -Action TransferCallToTarget -CallTarget $targetCQ -DtmfResponse Automatic
+        Write-verbose "Target set to $targetCQID"
+    }else{
+        $targetCQID = $null
+        $menuOption = New-CsAutoAttendantMenuOption -Action DisconnectCall -DtmfResponse Automatic
+        Write-Verbose "No target: setting menu option to disconnect"
+    }
+
+    # Let's build this in memory, ready to create the auto attendant
+    $time09001700 = New-CsOnlineTimeRange -Start 09:00 -End 17:00
+    $defaultGreetingPrompt = New-CsAutoAttendantPrompt -TextToSpeechPrompt $greetingText
+
+    #Basic call flow
+    $defaultMenu = New-CsAutoAttendantMenu -Name "Default Menu" -MenuOptions @($menuOption)
+    $defaultCallFlow = New-CsAutoAttendantCallFlow -Name "Default call flow" -Menu $defaultMenu -Greetings @($defaultGreetingPrompt)
+
+    #After hours
+    $afterHoursSchedule = New-CsOnlineSchedule -Name "After Hours" -WeeklyRecurrentSchedule -MondayHours @($time09001700) -TuesdayHours @($time09001700) -WednesdayHours @($time09001700) -ThursdayHours @($time09001700) -FridayHours @($time09001700) -Complement
     $afterHoursGreetingPrompt = New-CsAutoAttendantPrompt -TextToSpeechPrompt $afterHoursText
     $afterHoursMenuOption = New-CsAutoAttendantMenuOption -Action DisconnectCall -DtmfResponse Automatic
     $afterHoursMenu = New-CsAutoAttendantMenu -Name "AA menu1" -MenuOptions @($afterHoursMenuOption)
     $afterHoursCallFlow = New-CsAutoAttendantCallFlow -Name "After Hours" -Menu $afterHoursMenu -Greetings @($afterHoursGreetingPrompt)
     $afterHoursCallHandlingAssociation = New-CsAutoAttendantCallHandlingAssociation -Type AfterHours -ScheduleId $afterHoursSchedule.Id -CallFlowId $afterHoursCallFlow.Id
-    Write-Verbose "$InfoStringPrefix $AATypeAccountString AA_$($DisplayName)@$TenantDomain - Configured Auto Attendant after hours options"
 
-    # Business hours menu options
-    $sales = New-CsAutoAttendantCallableEntity -Identity $salesCQappinstance -Type applicationendpoint
-    $user1 = New-CsAutoAttendantCallableEntity -Identity $user1Id -Type User
-    $menuOption0 = New-CsAutoAttendantMenuOption -Action TransferCallToTarget -DtmfResponse Tone0 -CallTarget $sales
-    $menuOption1 = New-CsAutoAttendantMenuOption -Action TransferCallToTarget -DtmfResponse Tone1 -CallTarget $user1
-    Write-Verbose "$InfoStringPrefix $AATypeAccountString AA_$($DisplayName)@$TenantDomain - Configured Auto Attendant menu options"
-
-    # Business hours menu
-    $greetingPrompt = New-CsAutoAttendantPrompt -TextToSpeechPrompt $greetingText
-    $menuPrompt = New-CsAutoAttendantPrompt -TextToSpeechPrompt $mainMenuText
-    $menu = New-CsAutoAttendantMenu -Name "AA menu2" -Prompts @($menuPrompt) -EnableDialByName -MenuOptions @($menuOption0,$menuOption1)
-    Write-Verbose "$InfoStringPrefix $AATypeAccountString AA_$($DisplayName)@$TenantDomain - Configured Auto Attendant menu"
-
-    # And the call flow
-    $DefaultCallFlowPArameters = @{
-        Name = "$($AutoAttendant.Name) Default"
-        Menu = $menu
-        Greetings = $greetingPrompt
-    }
-    $defaultCallFlow = New-CsAutoAttendantCallFlow @DefaultCallFlowPArameters
-    Write-Verbose "$InfoStringPrefix $AATypeAccountString AA_$($DisplayName)@$TenantDomain - Configured Auto Attendant call flow"
+    Write-Verbose "$InfoStringPrefix $AATypeAccountString $($AutoAttendant.Name) - Configured Auto Attendant options"
 
     # You have all the objects
     # Now, you can create an auto attendant
@@ -1657,7 +1674,7 @@ function New-NasTeamsAutoAttendant {
 
     $NewAutoAttendant = New-CsAutoAttendant @AutoAttendantParameters
 
-    Write-Verbose "$InfoStringPrefix $CQTypeAccountString $($AutoAttendant.Name) - Auto Attendant has now been created."
+    Write-Verbose "$InfoStringPrefix $AATypeAccountString $($AutoAttendant.Name) - Auto Attendant has now been created."
     Write-Host "Auto Attendant: ""$($AutoAttendant.Name)""..." -NoNewline
     Write-Host " CREATED" -ForegroundColor Green
     #Pass the Auto Attendant ObjectID back to the GUID of the Auto Attendant object
@@ -2429,19 +2446,29 @@ function New-NasTeamsResourceAccount {
         [NasAA]$AutoAttendant
 
     )
-
+    #Null the var
+    $RAAccountUPN = $null
+    
     if($CallQueue){
         $AppID = "11cd3e2e-fccb-42ad-ad00-878b93575e07"
         #$Prefix = "racq-cc-lll-"
         $DisplayName = $CallQueue.Name
         #$TenantDomain = $CallQueue.TenantDomain
         $PhoneNumber = $CallQueue.PhoneNumber
+        $RAAccountUPN = $CallQueue.ResourceAccountUPN
     }else{
+        Write-Verbose "No call queue resource account specified"
+    }
+
+    if($AutoAttendant){
         $AppID = "ce933385-9390-45d1-9512-c8d228074e07"
         #$Prefix = "raaa-cc-lll-"
         $DisplayName = $AutoAttendant.Name
         #$TenantDomain = $AutoAttendant.TenantDomain
         $PhoneNumber = $AutoAttendant.PhoneNumber
+        $RAAccountUPN = $AutoAttendant.ResourceAccountUPN
+    }else{
+        Write-Verbose "No auto attendant resource account specified"
     }
     
     #Define the error verbose
@@ -2450,7 +2477,6 @@ function New-NasTeamsResourceAccount {
     $RATypeAccountString = ":: RESOURCE ACCOUNT ::"
 
     $i = 0
-    $RAAccountUPN = $null
     # we are doing this to prevent an error in foreach when the user hasn't provided an phone number, so we create a dummy value
     if(!($PhoneNumber)){$PhoneNumber = ""}
     $PhoneNumber | ForEach-Object {
@@ -2469,11 +2495,9 @@ function New-NasTeamsResourceAccount {
         #    # racq-cc-lll-ITsupport2@wardmanor.onmicrosoft.com
         #}
 
-        $RAAccountUPN = $CallQueue.ResourceAccountUPN
-
         $NewRA = Get-CsOnlineApplicationInstance -Identity $RAAccountUPN -ErrorAction SilentlyContinue
         if(!($NewRA)){
-                Write-Verbose "$($InfoStringPrefix) $($RATypeAccountString) $($RAAccountUPN) - Account doesn't exist, moving to creation."
+                Write-Verbose "$InfoStringPrefix $RATypeAccountString $RAAccountUPN - Account doesn't exist, moving to creation."
                 Write-Verbose "Resource Account display name: ""$DisplayName"""
                 # Create resource account of call queue type
                 $RAParameters = @{
@@ -2482,22 +2506,42 @@ function New-NasTeamsResourceAccount {
                     DisplayName = "$DisplayName"
                 }
                 $NewRA = New-CsOnlineApplicationInstance @RAParameters
-                Write-Verbose "$InfoStringPrefix $RATypeAccountString $($RAAccountUPN) - Account has now been created."
-                Write-Host "Resource Account: ""$($RAAccountUPN)""..." -NoNewline
+                Write-Verbose "$InfoStringPrefix $RATypeAccountString $RAAccountUPN - Account has now been created."
+                Write-Host "Resource Account: ""$RAAccountUPN""..." -NoNewline
                 Write-Host " CREATED" -ForegroundColor Green
 
                 #Write-Verbose "$InfoStringPrefix $RATypeAccountString $($RAAccountUPN) - Account is available for use, moving to call queue checks."
                 if($CallQueue){
                     $CallQueue.ResourceAccount += $NewRA.objectID
+                }else{
+                    Write-Verbose "Not a call queue"
+                }
+
+                if($AutoAttendant){
+                    $AutoAttendant.ResourceAccount += $NewRA.objectID
+                }else{
+                    Write-Verbose "Not an auto attendant"
                 }
 
         #The Resource Account exists, skip to creating the call queue    
         }Else{
             #$NewRA = Get-CsOnlineApplicationInstance -Identity $RAAccountUPN
-            Write-Verbose "$InfoStringPrefix $RATypeAccountString $($RAAccountUPN) - Account already exists, skipping to call queue creation."
-            Write-Host "Resource Account: ""$($RAAccountUPN)""..." -NoNewline
+            Write-Verbose "$InfoStringPrefix $RATypeAccountString $RAAccountUPN - Account already exists, skipping..."
+            Write-Host "Resource Account: ""$RAAccountUPN""..." -NoNewline
             Write-Host " ALREADY EXISTS" -ForegroundColor Green
-            $CallQueue.ResourceAccount += $NewRA.objectID
+            if($CallQueue){
+                $CallQueue.ResourceAccount += $NewRA.objectID
+                Write-Verbose "CQ: Writing RA object ID back $($CallQueue.ResourceAccount)"
+            }else{
+                Write-Verbose "Not a call queue"
+            }
+
+            if($AutoAttendant){
+                $AutoAttendant.ResourceAccount += $NewRA.objectID
+                Write-Verbose "AA: Writing RA object ID back $($AutoAttendant.ResourceAccount)"
+            }else{
+                Write-Verbose "Not an auto attendant"
+            }
         }
 
         $NewRA
@@ -2528,7 +2572,7 @@ function New-NasTeamsResourceAccountAssociation{
         $CallQueue,
 
         [Parameter(Mandatory,ParameterSetName = 'AutoAttendant')]
-        [NasAA]$AutoAttendant,
+        $AutoAttendant,
 
         [parameter(Mandatory)]
         [string]$ResourceAccountObjectID
@@ -2557,10 +2601,19 @@ function New-NasTeamsResourceAccountAssociation{
     }
     Write-Verbose "Resource account: $ResourceAccountObjectID available, moving on."
 
-    if(($CallQueue | Get-Member)[0].typename -eq "NasCQ"){
-        $RAConfigurationID = $CallQueue.Guid.Guid
-    }else{
-        $RAConfigurationID = $CallQueue.Identity
+    if($ConfigurationType -eq "CallQueue"){
+        if(($CallQueue | Get-Member)[0].typename -eq "NasCQ"){
+            $RAConfigurationID = $CallQueue.Guid.Guid
+        }else{
+            $RAConfigurationID = $CallQueue.Identity
+        }
+    }
+    if($ConfigurationType -eq "AutoAttendant"){
+        if(($AutoAttendant | Get-Member)[0].typename -eq "NasAA"){
+            $RAConfigurationID = $AutoAttendant.Guid.Guid
+        }else{
+            $RAConfigurationID = $AutoAttendant.Identity
+        }
     }
 
     if(Get-CsOnlineApplicationInstance -Identities $ResourceAccountObjectID){
