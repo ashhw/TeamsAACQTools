@@ -154,6 +154,14 @@ class NasAA {
     [ValidatePattern('^\+.*')]
     [string[]]$PhoneNumber
 
+    [string]$DefaultActionTextToSpeech
+
+    # Nom business hours action
+    [ValidateSet('Disconnect','Forward','Voicemail','SharedVoicemail')]
+    [string]$NonBusinessHoursAction = 'Disconnect'
+
+    [string]$NonBusinessHoursActionTextToSpeechPrompt
+
     #[PSCustomObject]$DefaultCallFlow
     #[PSCustomObject]$CallFlows
     #[PSCustomObject]$CallHandlingAssociations
@@ -719,6 +727,14 @@ function Import-NasAACQData {
             $defaultActionAudioFilename = ""
         }
 
+        if($_.DefaultAction.Prompt.TextToSpeechPrompt){
+            Write-Verbose "Text-to-speech specified, setting text-to-speech"
+            $defaultActionTextToSpeech = $_.DefaultAction.Prompt.TextToSpeechPrompt
+        }else{
+            Write-Verbose "Text-to-speech not specified, setting to null"
+            $defaultActionTextToSpeech = ""
+        }
+
         if($_.NonBusinessHoursAction.Prompt.AudioFilePrompt){
             $NonBusinessHoursActionAudioFilePrompt = $_.NonBusinessHoursAction.Prompt.AudioFilePrompt
         }else{
@@ -807,6 +823,7 @@ function Import-NasAACQData {
             DefaultActionAudioFilename = $DefaultActionAudioFilename
             DefaultActionAudioFileID = $DefaultActionAudioFileID
             DefaultActionAudioFilePath = $defaultActionfileLocation.replace(".wav",".mp3")
+            DefaultActionTextToSpeech = $defaultActionTextToSpeech
             DefaultActionTargetQueue = $DefaultActionQueueID
             DefaultActionTargetUri = $DefaultActionTargetUri
             DefaultActionQuestions = $DefaultActionQuestion
@@ -1432,6 +1449,8 @@ Function Import-NasAA {
         $AAObj.ResourceAccountUPN = $aa.ResourceAccountUPN
         $AAObj.Name = $aa.AutoAttendantName
         $AAObj.DefaultTargetCallQueue = $DefaultTargetCallQueue
+        $AAObj.DefaultActionTextToSpeech = $aa.DefaultActionTextToSpeech
+        $AAObj.NonBusinessHoursActionTextToSpeechPrompt = $aa.NonBusinessHoursActionTextToSpeechPrompt
         #$AAObj.PhoneNumber = $x.PhoneNumber
         #$AAObj.LanguageID = $x.LanguageID
         #$AAObj.TimeZone = $x.TimeZone
@@ -1653,14 +1672,33 @@ function New-NasTeamsAutoAttendant {
     $AATypeAccountString = " :: AUTO ATTENDANT :: "
     
     #Null the vars
-    $targetCQID,$targetCQ,$menuOption = $null
+    $targetCQID,$targetCQ,$menuOption,$greetingText,$afterHoursText,$defaultCallFlow,$defaultMenu,$afterHoursTarget,$afterHoursMenuOption,$afterHoursTargetGuid,$afterHoursTargetCheck = $null
 
     # Configuration Variables
     $aaLanguage = 'en-GB'
     $aaTimezone = 'GMT Standard Time'
-    $greetingText = "Temporary greeting text, please change before go-live."
-    $afterHoursText = "Temporary after hours text, please change before go-live."
+    
+    ## Greeting text prompt
+    if(!([string]::IsNullOrEmpty($AutoAttendant.DefaultActionTextToSpeech))){
+        $greetingText = $AutoAttendant.DefaultActionTextToSpeech
+        $defaultGreetingPrompt = New-CsAutoAttendantPrompt -TextToSpeechPrompt $greetingText
+        Write-verbose "Greeting text set to "$greetingText""
+    }else{
+        $defaultGreetingPrompt = $null
+        Write-Verbose "No greeting text"
+    }
 
+    ## After hours text prompt
+    if(!([string]::IsNullOrEmpty($AutoAttendant.NonBusinessHoursActionTextToSpeechPrompt))){
+        $afterHoursText = $AutoAttendant.NonBusinessHoursActionTextToSpeechPrompt
+        $afterHoursGreetingPrompt = New-CsAutoAttendantPrompt -TextToSpeechPrompt $afterHoursText
+        Write-verbose "After hours greeting text set to "$afterHoursText""
+    }else{
+        $afterHoursGreetingPrompt = $null
+        Write-Verbose "No after hours greeting text"
+    }
+
+    ## Set the default target to the call queue
     if(!([string]::IsNullOrEmpty($AutoAttendant.DefaultTargetCallQueue))){
         $targetCQID = $AutoAttendant.DefaultTargetCallQueue
         $targetCQ = New-CsAutoAttendantCallableEntity -Identity $targetCQID -Type applicationendpoint
@@ -1674,16 +1712,48 @@ function New-NasTeamsAutoAttendant {
 
     # Let's build this in memory, ready to create the auto attendant
     $time09001700 = New-CsOnlineTimeRange -Start 09:00 -End 17:00
-    $defaultGreetingPrompt = New-CsAutoAttendantPrompt -TextToSpeechPrompt $greetingText
 
     #Basic call flow
     $defaultMenu = New-CsAutoAttendantMenu -Name "Default Menu" -MenuOptions @($menuOption)
     $defaultCallFlow = New-CsAutoAttendantCallFlow -Name "Default call flow" -Menu $defaultMenu -Greetings @($defaultGreetingPrompt)
 
-    #After hours
+    ## Non business hours target
+    if($AutoAttendant.NonBusinessHoursAction -ne "Disconnect"){
+        Write-Verbose "NonBusinessHoursAction not set to Disconnect and therefore setting the new NonBusinessHoursAction"
+        Write-Verbose "Checking if NonBusinessHoursAction: $($AutoAttendant.NonBusinessHoursActionUri) is a phone number"
+        if($AutoAttendant.NonBusinessHoursActionUri -like "tel:*"){
+            Write-Verbose "NonBusinessHoursActionUri: $($AutoAttendant.NonBusinessHoursActionUri) is a phone number, setting the value"
+            $afterHoursTarget = New-CsAutoAttendantCallableEntity -Identity $AutoAttendant.NonBusinessHoursActionUri -Type applicationendpoint
+            $afterHoursMenuOption = New-CsAutoAttendantMenuOption -Action TransferCallToTarget -CallTarget $afterHoursTarget -DtmfResponse Automatic
+        }else{
+            Write-Verbose "NonBusinessHoursActionUri: $($AutoAttendant.NonBusinessHoursActionUri) is not a phone number"
+            if($AutoAttendant.NonBusinessHoursActionUri -like "sip:*"){
+                Write-Verbose "NonBusinessHoursActionUri: $($AutoAttendant.NonBusinessHoursActionUri) is a sip address"
+                Write-Verbose "Stripping sip: from the NonBusinessHoursActionUri $($AutoAttendant.NonBusinessHoursActionUri) to grab objectID"
+                $afterHoursTargetCheck = $AutoAttendant.NonBusinessHoursActionUri.substring(4)
+            }else{
+                Write-Verbose "NonBusinessHoursActionUri is not a sip address"
+                $afterHoursTargetCheck = $AutoAttendant.NonBusinessHoursActionUri
+            }
+            Write-Verbose "Checking if NonBusinessHoursActionUri: $($AutoAttendant.NonBusinessHoursActionUri) is valid"
+            if(($afterHoursTargetCheck | Get-NASObjectGuid).objguid.guid){
+                $afterHoursTargetGuid = ($afterHoursTargetCheck | Get-NASObjectGuid).objguid.guid
+
+                Write-Verbose "NonBusinessHoursActionUri is valid, setting to: $afterHoursTargetGuid"
+                $afterHoursTarget = New-CsAutoAttendantCallableEntity -Identity $afterHoursTargetGuid -Type applicationendpoint
+                $afterHoursMenuOption = New-CsAutoAttendantMenuOption -Action TransferCallToTarget -CallTarget $afterHoursTarget -DtmfResponse Automatic
+            }else{
+                Write-Error "NonBusinessHoursActionUri: $afterHoursTargetCheck doesn't exist/cannot find GUID."
+            }
+        }
+    }else{
+        Write-Verbose "Non business hours set to Disconnect, setting after hours menu option"
+        $afterHoursMenuOption = New-CsAutoAttendantMenuOption -Action DisconnectCall -DtmfResponse Automatic
+    }
+
+    #After hours further configuration
     $afterHoursSchedule = New-CsOnlineSchedule -Name "After Hours" -WeeklyRecurrentSchedule -MondayHours @($time09001700) -TuesdayHours @($time09001700) -WednesdayHours @($time09001700) -ThursdayHours @($time09001700) -FridayHours @($time09001700) -Complement
-    $afterHoursGreetingPrompt = New-CsAutoAttendantPrompt -TextToSpeechPrompt $afterHoursText
-    $afterHoursMenuOption = New-CsAutoAttendantMenuOption -Action DisconnectCall -DtmfResponse Automatic
+    #$afterHoursMenuOption = New-CsAutoAttendantMenuOption -Action DisconnectCall -DtmfResponse Automatic
     $afterHoursMenu = New-CsAutoAttendantMenu -Name "AA menu1" -MenuOptions @($afterHoursMenuOption)
     $afterHoursCallFlow = New-CsAutoAttendantCallFlow -Name "After Hours" -Menu $afterHoursMenu -Greetings @($afterHoursGreetingPrompt)
     $afterHoursCallHandlingAssociation = New-CsAutoAttendantCallHandlingAssociation -Type AfterHours -ScheduleId $afterHoursSchedule.Id -CallFlowId $afterHoursCallFlow.Id
