@@ -692,6 +692,33 @@ function Import-NasAACQData {
             $DefaultActionQuestion = ""
         }
 
+        $defaultActionfileLocation = ""
+
+        if($_.DefaultAction.Prompt.AudioFilePrompt.OriginalFileName){
+            Write-Verbose "TRUE: $($_.DefaultAction.Prompt.AudioFilePrompt.OriginalFileName)"
+            Write-Verbose "Importing audio file: $($_.DefaultAction.Prompt.AudioFilePrompt.OriginalFileName)"
+            $defaultActionfileLocation = "\audio\{0}\{1}{2}" -f $_.Identity.InstanceId.Guid, $_.DefaultAction.Prompt.AudioFilePrompt.UniqueName, $_.DefaultAction.Prompt.AudioFilePrompt.OriginalFileName.substring($_.DefaultAction.Prompt.AudioFilePrompt.OriginalFileName.lastindexof("."))
+        }else{
+            Write-Verbose "No audio file specified, setting file location to null"
+            $defaultActionfileLocation = ""
+        }
+
+        if($_.DefaultAction.Prompt.AudioFilePrompt.UniqueName){
+            Write-Verbose "Audio file specified, setting file id"
+            $defaultActionAudioFileID = $_.DefaultAction.Prompt.AudioFilePrompt.UniqueName
+        }else{
+            Write-Verbose "Audio file not specified, setting to null"
+            $defaultActionAudioFileID = ""
+        }
+
+        if($_.DefaultAction.Prompt.AudioFilePrompt.OriginalFileName){
+            Write-Verbose "Audio file specified, setting filename"
+            $defaultActionAudioFilename = $_.DefaultAction.Prompt.AudioFilePrompt.OriginalFileName
+        }else{
+            Write-Verbose "Audio file not specified, setting filename to null"
+            $defaultActionAudioFilename = ""
+        }
+
         if($_.NonBusinessHoursAction.Prompt.AudioFilePrompt){
             $NonBusinessHoursActionAudioFilePrompt = $_.NonBusinessHoursAction.Prompt.AudioFilePrompt
         }else{
@@ -777,6 +804,9 @@ function Import-NasAACQData {
             #HolidaySet = $_.HolidaySetIDList
             BusinessHoursID = $_.BusinessHoursID.InstanceID
             DefaultAction = if($_.DefaultAction.Action -like "TransferTo*"){"Forward"}else{"Disconnect"}
+            DefaultActionAudioFilename = $DefaultActionAudioFilename
+            DefaultActionAudioFileID = $DefaultActionAudioFileID
+            DefaultActionAudioFilePath = $defaultActionfileLocation.replace(".wav",".mp3")
             DefaultActionTargetQueue = $DefaultActionQueueID
             DefaultActionTargetUri = $DefaultActionTargetUri
             DefaultActionQuestions = $DefaultActionQuestion
