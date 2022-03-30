@@ -1763,64 +1763,302 @@ function New-NasTeamsAutoAttendant {
 
     #Build out the timespan objects as the New-CsOnlineTimeRange cmdlet requires this
     if($AutoAttendant.BusinessHours.MonOpen -and $AutoAttendant.BusinessHours.MonClose){
-        $MonStartTimeSpan = [TimeSpan]::Parse($AutoAttendant.BusinessHours.MonOpen)
-        $MonEndTimeSpan = [TimeSpan]::Parse($AutoAttendant.BusinessHours.MonClose)
-        Write-Verbose "Setting Monday business hours: $($AutoAttendant.BusinessHours.MonOpen) - $($AutoAttendant.BusinessHours.MonClose)"
-        $AutoAttendantMonTimeRange = New-CsOnlineTimeRange -Start $MonStartTimeSpan -End $MonEndTimeSpan
+        $MonOpenTimeToConvert = [datetime]$AutoAttendant.BusinessHours.MonOpen
+        Write-Verbose "[TIME] :: Imported time for $($AutoAttendant.BusinessHours.MonOpen): $MonOpenTimeToConvert"
+        $MonCloseTimeToConvert = [datetime]$AutoAttendant.BusinessHours.MonClose
+        Write-Verbose "[TIME] :: Imported time for $($AutoAttendant.BusinessHours.MonClose): $MonCloseTimeToConvert"
+
+        if(!(($MonOpenTimeToConvert.minute % 15) -eq 0)){
+            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.MonOpen) :: Rounding minutes up to nearest 15"
+            $MonOpenTimeConvert15 = $MonOpenTimeToConvert.addminutes(-($MonOpenTimeToConvert.minute % 15) + 15)
+            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.MonOpen) :: Time is now $MonOpenTimeConvert15"
+            $MonOpenTimeSpan = $MonOpenTimeConvert15.TimeOfDay
+        }else{
+            $MonOpenTimeSpan = $MonOpenTimeToConvert.TimeOfDay
+            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.MonOpen) :: $MonOpenTimeToConvert :: Minutes in time already a multiple of 15"
+        }
+
+        if(!(($MonCloseTimeToConvert.minute % 15) -eq 0)){
+            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.MonClose) :: Rounding minutes up to nearest 15"
+            $MonCloseTimeConvert15 = $MonCloseTimeToConvert.addminutes(-($MonCloseTimeToConvert.minute % 15) + 15)
+            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.MonClose) :: Time is now $MonCloseTimeConvert15"
+            $MonCloseTimeSpan = $MonCloseTimeConvert15.TimeOfDay
+        }else{
+            $MonCloseTimeSpan = $MonCloseTimeToConvert.TimeOfDay
+            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.MonClose) :: $MonCloseTimeToConvert :: Minutes in time already a multiple of 15"
+        }
+
+        Write-Verbose "Setting Monday business hours: $MonOpenTimeSpan - $MonCloseTimeSpan"
+
+        #Create midnight var to convert for 24 hours
+        $MidnightVar = [datetime]("00:00")
+
+        if($MonCloseTimeSpan -eq $MidnightVar.TimeOfDay){
+            Write-verbose "Close time is midnight, therefore converting for 24 hours"
+            $AutoAttendantMonTimeRange = New-CsOnlineTimeRange -Start $MonOpenTimeSpan -End 1.00:00
+        }else{
+            Write-verbose "Setting time range: $MonOpenTimeSpan - $MonCloseTimeSpan"
+            $AutoAttendantMonTimeRange = New-CsOnlineTimeRange -Start $MonOpenTimeSpan -End $MonCloseTimeSpan
+        }
+
     }else{
         $AutoAttendantMonTimeRange = $null
     }
 
     if($AutoAttendant.BusinessHours.TueOpen -and $AutoAttendant.BusinessHours.TueClose){
-        $TueStartTimeSpan = [TimeSpan]::Parse($AutoAttendant.BusinessHours.TueOpen)
-        $TueEndTimeSpan = [TimeSpan]::Parse($AutoAttendant.BusinessHours.TueClose)
-        Write-Verbose "Setting Monday business hours: $($AutoAttendant.BusinessHours.TueOpen) - $($AutoAttendant.BusinessHours.TueClose)"
-        $AutoAttendantTueTimeRange = New-CsOnlineTimeRange -Start $TueStartTimeSpan -End $TueEndTimeSpan
+        $TueOpenTimeToConvert = [datetime]$AutoAttendant.BusinessHours.TueOpen
+        Write-Verbose "[TIME] :: Imported time for $($AutoAttendant.BusinessHours.TueOpen): $TueOpenTimeToConvert"
+        $TueCloseTimeToConvert = [datetime]$AutoAttendant.BusinessHours.TueClose
+        Write-Verbose "[TIME] :: Imported time for $($AutoAttendant.BusinessHours.TueClose): $TueCloseTimeToConvert"
+    
+        if(!(($TueOpenTimeToConvert.minute % 15) -eq 0)){
+            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.TueOpen) :: Rounding minutes up to nearest 15"
+            $TueOpenTimeConvert15 = $TueOpenTimeToConvert.addminutes(-($TueOpenTimeToConvert.minute % 15) + 15)
+            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.TueOpen) :: Time is now $TueOpenTimeConvert15"
+            $TueOpenTimeSpan = $TueOpenTimeConvert15.TimeOfDay
+        }else{
+            $TueOpenTimeSpan = $TueOpenTimeToConvert.TimeOfDay
+            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.TueOpen) :: $TueOpenTimeToConvert :: Minutes in time already a multiple of 15"
+        }
+    
+        if(!(($TueCloseTimeToConvert.minute % 15) -eq 0)){
+            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.TueClose) :: Rounding minutes up to nearest 15"
+            $TueCloseTimeConvert15 = $TueCloseTimeToConvert.addminutes(-($TueCloseTimeToConvert.minute % 15) + 15)
+            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.TueClose) :: Time is now $TueCloseTimeConvert15"
+            $TueCloseTimeSpan = $TueCloseTimeConvert15.TimeOfDay
+        }else{
+            $TueCloseTimeSpan = $TueCloseTimeToConvert.TimeOfDay
+            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.TueClose) :: $TueCloseTimeToConvert :: Minutes in time already a multiple of 15"
+        }
+    
+        Write-Verbose "Setting Tuesday business hours: $TueOpenTimeSpan - $TueCloseTimeSpan"
+    
+        #Create midnight var to convert for 24 hours
+        $MidnightVar = [datetime]("00:00")
+    
+        if($TueCloseTimeSpan -eq $MidnightVar.TimeOfDay){
+            Write-verbose "Close time is midnight, therefore converting for 24 hours"
+            $AutoAttendantTueTimeRange = New-CsOnlineTimeRange -Start $TueOpenTimeSpan -End 1.00:00
+        }else{
+            Write-verbose "Setting time range: $TueOpenTimeSpan - $TueCloseTimeSpan"
+            $AutoAttendantTueTimeRange = New-CsOnlineTimeRange -Start $TueOpenTimeSpan -End $TueCloseTimeSpan
+        }
+    
     }else{
         $AutoAttendantTueTimeRange = $null
     }
 
     if($AutoAttendant.BusinessHours.WedsOpen -and $AutoAttendant.BusinessHours.WedsClose){
-        $WedsStartTimeSpan = [TimeSpan]::Parse($AutoAttendant.BusinessHours.WedsOpen)
-        $WedsEndTimeSpan = [TimeSpan]::Parse($AutoAttendant.BusinessHours.WedsClose)
-        Write-Verbose "Setting Monday business hours: $($AutoAttendant.BusinessHours.WedsOpen) - $($AutoAttendant.BusinessHours.WedsClose)"
-        $AutoAttendantWedsTimeRange = New-CsOnlineTimeRange -Start $WedsStartTimeSpan -End $WedsEndTimeSpan
+        $WedsOpenTimeToConvert = [datetime]$AutoAttendant.BusinessHours.WedsOpen
+        Write-Verbose "[TIME] :: Imported time for $($AutoAttendant.BusinessHours.WedsOpen): $WedsOpenTimeToConvert"
+        $WedsCloseTimeToConvert = [datetime]$AutoAttendant.BusinessHours.WedsClose
+        Write-Verbose "[TIME] :: Imported time for $($AutoAttendant.BusinessHours.WedsClose): $WedsCloseTimeToConvert"
+    
+        if(!(($WedsOpenTimeToConvert.minute % 15) -eq 0)){
+            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.WedsOpen) :: Rounding minutes up to nearest 15"
+            $WedsOpenTimeConvert15 = $WedsOpenTimeToConvert.addminutes(-($WedsOpenTimeToConvert.minute % 15) + 15)
+            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.WedsOpen) :: Time is now $WedsOpenTimeConvert15"
+            $WedsOpenTimeSpan = $WedsOpenTimeConvert15.TimeOfDay
+        }else{
+            $WedsOpenTimeSpan = $WedsOpenTimeToConvert.TimeOfDay
+            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.WedsOpen) :: $WedsOpenTimeToConvert :: Minutes in time already a multiple of 15"
+        }
+    
+        if(!(($WedsCloseTimeToConvert.minute % 15) -eq 0)){
+            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.WedsClose) :: Rounding minutes up to nearest 15"
+            $WedsCloseTimeConvert15 = $WedsCloseTimeToConvert.addminutes(-($WedsCloseTimeToConvert.minute % 15) + 15)
+            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.WedsClose) :: Time is now $WedsCloseTimeConvert15"
+            $WedsCloseTimeSpan = $WedsCloseTimeConvert15.TimeOfDay
+        }else{
+            $WedsCloseTimeSpan = $WedsCloseTimeToConvert.TimeOfDay
+            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.WedsClose) :: $WedsCloseTimeToConvert :: Minutes in time already a multiple of 15"
+        }
+    
+        Write-Verbose "Setting Wednesday business hours: $WedsOpenTimeSpan - $WedsCloseTimeSpan"
+    
+        #Create midnight var to convert for 24 hours
+        $MidnightVar = [datetime]("00:00")
+    
+        if($WedsCloseTimeSpan -eq $MidnightVar.TimeOfDay){
+            Write-verbose "Close time is midnight, therefore converting for 24 hours"
+            $AutoAttendantWedsTimeRange = New-CsOnlineTimeRange -Start $WedsOpenTimeSpan -End 1.00:00
+        }else{
+            Write-verbose "Setting time range: $WedsOpenTimeSpan - $WedsCloseTimeSpan"
+            $AutoAttendantWedsTimeRange = New-CsOnlineTimeRange -Start $WedsOpenTimeSpan -End $WedsCloseTimeSpan
+        }
+    
     }else{
         $AutoAttendantWedsTimeRange = $null
     }
 
     if($AutoAttendant.BusinessHours.ThursOpen -and $AutoAttendant.BusinessHours.ThursClose){
-        $ThursStartTimeSpan = [TimeSpan]::Parse($AutoAttendant.BusinessHours.ThursOpen)
-        $ThursEndTimeSpan = [TimeSpan]::Parse($AutoAttendant.BusinessHours.ThursClose)
-        Write-Verbose "Setting Monday business hours: $($AutoAttendant.BusinessHours.ThursOpen) - $($AutoAttendant.BusinessHours.ThursClose)"
-        $AutoAttendantThursTimeRange = New-CsOnlineTimeRange -Start $ThursStartTimeSpan -End $ThursEndTimeSpan
+        $ThursOpenTimeToConvert = [datetime]$AutoAttendant.BusinessHours.ThursOpen
+        Write-Verbose "[TIME] :: Imported time for $($AutoAttendant.BusinessHours.ThursOpen): $ThursOpenTimeToConvert"
+        $ThursCloseTimeToConvert = [datetime]$AutoAttendant.BusinessHours.ThursClose
+        Write-Verbose "[TIME] :: Imported time for $($AutoAttendant.BusinessHours.ThursClose): $ThursCloseTimeToConvert"
+    
+        if(!(($ThursOpenTimeToConvert.minute % 15) -eq 0)){
+            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.ThursOpen) :: Rounding minutes up to nearest 15"
+            $ThursOpenTimeConvert15 = $ThursOpenTimeToConvert.addminutes(-($ThursOpenTimeToConvert.minute % 15) + 15)
+            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.ThursOpen) :: Time is now $ThursOpenTimeConvert15"
+            $ThursOpenTimeSpan = $ThursOpenTimeConvert15.TimeOfDay
+        }else{
+            $ThursOpenTimeSpan = $ThursOpenTimeToConvert.TimeOfDay
+            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.ThursOpen) :: $ThursOpenTimeToConvert :: Minutes in time already a multiple of 15"
+        }
+    
+        if(!(($ThursCloseTimeToConvert.minute % 15) -eq 0)){
+            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.ThursClose) :: Rounding minutes up to nearest 15"
+            $ThursCloseTimeConvert15 = $ThursCloseTimeToConvert.addminutes(-($ThursCloseTimeToConvert.minute % 15) + 15)
+            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.ThursClose) :: Time is now $ThursCloseTimeConvert15"
+            $ThursCloseTimeSpan = $ThursCloseTimeConvert15.TimeOfDay
+        }else{
+            $ThursCloseTimeSpan = $ThursCloseTimeToConvert.TimeOfDay
+            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.ThursClose) :: $ThursCloseTimeToConvert :: Minutes in time already a multiple of 15"
+        }
+    
+        Write-Verbose "Setting Thursday business hours: $ThursOpenTimeSpan - $ThursCloseTimeSpan"
+    
+        #Create midnight var to convert for 24 hours
+        $MidnightVar = [datetime]("00:00")
+    
+        if($ThursCloseTimeSpan -eq $MidnightVar.TimeOfDay){
+            Write-verbose "Close time is midnight, therefore converting for 24 hours"
+            $AutoAttendantThursTimeRange = New-CsOnlineTimeRange -Start $ThursOpenTimeSpan -End 1.00:00
+        }else{
+            Write-verbose "Setting time range: $ThursOpenTimeSpan - $ThursCloseTimeSpan"
+            $AutoAttendantThursTimeRange = New-CsOnlineTimeRange -Start $ThursOpenTimeSpan -End $ThursCloseTimeSpan
+        }
+    
     }else{
         $AutoAttendantThursTimeRange = $null
     }
 
     if($AutoAttendant.BusinessHours.FriOpen -and $AutoAttendant.BusinessHours.FriClose){
-        $FriStartTimeSpan = [TimeSpan]::Parse($AutoAttendant.BusinessHours.FriOpen)
-        $FriEndTimeSpan = [TimeSpan]::Parse($AutoAttendant.BusinessHours.FriClose)
-        Write-Verbose "Setting Monday business hours: $($AutoAttendant.BusinessHours.FriOpen) - $($AutoAttendant.BusinessHours.FriClose)"
-        $AutoAttendantFriTimeRange = New-CsOnlineTimeRange -Start $FriStartTimeSpan -End $FriEndTimeSpan
+        $FriOpenTimeToConvert = [datetime]$AutoAttendant.BusinessHours.FriOpen
+        Write-Verbose "[TIME] :: Imported time for $($AutoAttendant.BusinessHours.FriOpen): $FriOpenTimeToConvert"
+        $FriCloseTimeToConvert = [datetime]$AutoAttendant.BusinessHours.FriClose
+        Write-Verbose "[TIME] :: Imported time for $($AutoAttendant.BusinessHours.FriClose): $FriCloseTimeToConvert"
+    
+        if(!(($FriOpenTimeToConvert.minute % 15) -eq 0)){
+            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.FriOpen) :: Rounding minutes up to nearest 15"
+            $FriOpenTimeConvert15 = $FriOpenTimeToConvert.addminutes(-($FriOpenTimeToConvert.minute % 15) + 15)
+            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.FriOpen) :: Time is now $FriOpenTimeConvert15"
+            $FriOpenTimeSpan = $FriOpenTimeConvert15.TimeOfDay
+        }else{
+            $FriOpenTimeSpan = $FriOpenTimeToConvert.TimeOfDay
+            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.FriOpen) :: $FriOpenTimeToConvert :: Minutes in time already a multiple of 15"
+        }
+    
+        if(!(($FriCloseTimeToConvert.minute % 15) -eq 0)){
+            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.FriClose) :: Rounding minutes up to nearest 15"
+            $FriCloseTimeConvert15 = $FriCloseTimeToConvert.addminutes(-($FriCloseTimeToConvert.minute % 15) + 15)
+            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.FriClose) :: Time is now $FriCloseTimeConvert15"
+            $FriCloseTimeSpan = $FriCloseTimeConvert15.TimeOfDay
+        }else{
+            $FriCloseTimeSpan = $FriCloseTimeToConvert.TimeOfDay
+            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.FriClose) :: $FriCloseTimeToConvert :: Minutes in time already a multiple of 15"
+        }
+    
+        Write-Verbose "Setting Friday business hours: $FriOpenTimeSpan - $FriCloseTimeSpan"
+    
+        #Create midnight var to convert for 24 hours
+        $MidnightVar = [datetime]("00:00")
+    
+        if($FriCloseTimeSpan -eq $MidnightVar.TimeOfDay){
+            Write-verbose "Close time is midnight, therefore converting for 24 hours"
+            $AutoAttendantFriTimeRange = New-CsOnlineTimeRange -Start $FriOpenTimeSpan -End 1.00:00
+        }else{
+            Write-verbose "Setting time range: $FriOpenTimeSpan - $FriCloseTimeSpan"
+            $AutoAttendantFriTimeRange = New-CsOnlineTimeRange -Start $FriOpenTimeSpan -End $FriCloseTimeSpan
+        }
+    
     }else{
         $AutoAttendantFriTimeRange = $null
     }
 
     if($AutoAttendant.BusinessHours.SatOpen -and $AutoAttendant.BusinessHours.SatClose){
-        $SatStartTimeSpan = [TimeSpan]::Parse($AutoAttendant.BusinessHours.SatOpen)
-        $SatEndTimeSpan = [TimeSpan]::Parse($AutoAttendant.BusinessHours.SatClose)
-        Write-Verbose "Setting Monday business hours: $($AutoAttendant.BusinessHours.SatOpen) - $($AutoAttendant.BusinessHours.SatClose)"
-        $AutoAttendantSatTimeRange = New-CsOnlineTimeRange -Start $SatStartTimeSpan -End $SatEndTimeSpan
+        $SatOpenTimeToConvert = [datetime]$AutoAttendant.BusinessHours.SatOpen
+        Write-Verbose "[TIME] :: Imported time for $($AutoAttendant.BusinessHours.SatOpen): $SatOpenTimeToConvert"
+        $SatCloseTimeToConvert = [datetime]$AutoAttendant.BusinessHours.SatClose
+        Write-Verbose "[TIME] :: Imported time for $($AutoAttendant.BusinessHours.SatClose): $SatCloseTimeToConvert"
+    
+        if(!(($SatOpenTimeToConvert.minute % 15) -eq 0)){
+            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.SatOpen) :: Rounding minutes up to nearest 15"
+            $SatOpenTimeConvert15 = $SatOpenTimeToConvert.addminutes(-($SatOpenTimeToConvert.minute % 15) + 15)
+            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.SatOpen) :: Time is now $SatOpenTimeConvert15"
+            $SatOpenTimeSpan = $SatOpenTimeConvert15.TimeOfDay
+        }else{
+            $SatOpenTimeSpan = $SatOpenTimeToConvert.TimeOfDay
+            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.SatOpen) :: $SatOpenTimeToConvert :: Minutes in time already a multiple of 15"
+        }
+    
+        if(!(($SatCloseTimeToConvert.minute % 15) -eq 0)){
+            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.SatClose) :: Rounding minutes up to nearest 15"
+            $SatCloseTimeConvert15 = $SatCloseTimeToConvert.addminutes(-($SatCloseTimeToConvert.minute % 15) + 15)
+            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.SatClose) :: Time is now $SatCloseTimeConvert15"
+            $SatCloseTimeSpan = $SatCloseTimeConvert15.TimeOfDay
+        }else{
+            $SatCloseTimeSpan = $SatCloseTimeToConvert.TimeOfDay
+            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.SatClose) :: $SatCloseTimeToConvert :: Minutes in time already a multiple of 15"
+        }
+    
+        Write-Verbose "Setting Saturday business hours: $SatOpenTimeSpan - $SatCloseTimeSpan"
+    
+        #Create midnight var to convert for 24 hours
+        $MidnightVar = [datetime]("00:00")
+    
+        if($SatCloseTimeSpan -eq $MidnightVar.TimeOfDay){
+            Write-verbose "Close time is midnight, therefore converting for 24 hours"
+            $AutoAttendantSatTimeRange = New-CsOnlineTimeRange -Start $SatOpenTimeSpan -End 1.00:00
+        }else{
+            Write-verbose "Setting time range: $SatOpenTimeSpan - $SatCloseTimeSpan"
+            $AutoAttendantSatTimeRange = New-CsOnlineTimeRange -Start $SatOpenTimeSpan -End $SatCloseTimeSpan
+        }
+    
     }else{
         $AutoAttendantSatTimeRange = $null
     }
 
     if($AutoAttendant.BusinessHours.SunOpen -and $AutoAttendant.BusinessHours.SunClose){
-        $SunStartTimeSpan = [TimeSpan]::Parse($AutoAttendant.BusinessHours.SunOpen)
-        $SunEndTimeSpan = [TimeSpan]::Parse($AutoAttendant.BusinessHours.SunClose)
-        Write-Verbose "Setting Monday business hours: $($AutoAttendant.BusinessHours.SunOpen) - $($AutoAttendant.BusinessHours.SunClose)"
-        $AutoAttendantSunTimeRange = New-CsOnlineTimeRange -Start $SunStartTimeSpan -End $SunEndTimeSpan
+        $SunOpenTimeToConvert = [datetime]$AutoAttendant.BusinessHours.SunOpen
+        Write-Verbose "[TIME] :: Imported time for $($AutoAttendant.BusinessHours.SunOpen): $SunOpenTimeToConvert"
+        $SunCloseTimeToConvert = [datetime]$AutoAttendant.BusinessHours.SunClose
+        Write-Verbose "[TIME] :: Imported time for $($AutoAttendant.BusinessHours.SunClose): $SunCloseTimeToConvert"
+    
+        if(!(($SunOpenTimeToConvert.minute % 15) -eq 0)){
+            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.SunOpen) :: Rounding minutes up to nearest 15"
+            $SunOpenTimeConvert15 = $SunOpenTimeToConvert.addminutes(-($SunOpenTimeToConvert.minute % 15) + 15)
+            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.SunOpen) :: Time is now $SunOpenTimeConvert15"
+            $SunOpenTimeSpan = $SunOpenTimeConvert15.TimeOfDay
+        }else{
+            $SunOpenTimeSpan = $SunOpenTimeToConvert.TimeOfDay
+            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.SunOpen) :: $SunOpenTimeToConvert :: Minutes in time already a multiple of 15"
+        }
+    
+        if(!(($SunCloseTimeToConvert.minute % 15) -eq 0)){
+            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.SunClose) :: Rounding minutes up to nearest 15"
+            $SunCloseTimeConvert15 = $SunCloseTimeToConvert.addminutes(-($SunCloseTimeToConvert.minute % 15) + 15)
+            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.SunClose) :: Time is now $SunCloseTimeConvert15"
+            $SunCloseTimeSpan = $SunCloseTimeConvert15.TimeOfDay
+        }else{
+            $SunCloseTimeSpan = $SunCloseTimeToConvert.TimeOfDay
+            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.SunClose) :: $SunCloseTimeToConvert :: Minutes in time already a multiple of 15"
+        }
+    
+        Write-Verbose "Setting Sunday business hours: $SunOpenTimeSpan - $SunCloseTimeSpan"
+    
+        #Create midnight var to convert for 24 hours
+        $MidnightVar = [datetime]("00:00")
+    
+        if($SunCloseTimeSpan -eq $MidnightVar.TimeOfDay){
+            Write-verbose "Close time is midnight, therefore converting for 24 hours"
+            $AutoAttendantSunTimeRange = New-CsOnlineTimeRange -Start $SunOpenTimeSpan -End 1.00:00
+        }else{
+            Write-verbose "Setting time range: $SunOpenTimeSpan - $SunCloseTimeSpan"
+            $AutoAttendantSunTimeRange = New-CsOnlineTimeRange -Start $SunOpenTimeSpan -End $SunCloseTimeSpan
+        }
+    
     }else{
         $AutoAttendantSunTimeRange = $null
     }
