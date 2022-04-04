@@ -1802,6 +1802,7 @@ function New-NasTeamsAutoAttendant {
         }
 
     }else{
+        Write-Verbose "No business hours specified, therefore assuming $($AutoAttendant.Name) is closed on Monday."
         $AutoAttendantMonTimeRange = $null
     }
 
@@ -1845,6 +1846,7 @@ function New-NasTeamsAutoAttendant {
         }
     
     }else{
+        Write-Verbose "No business hours specified, therefore assuming $($AutoAttendant.Name) is closed on Tuesday."
         $AutoAttendantTueTimeRange = $null
     }
 
@@ -1888,6 +1890,7 @@ function New-NasTeamsAutoAttendant {
         }
     
     }else{
+        Write-Verbose "No business hours specified, therefore assuming $($AutoAttendant.Name) is closed on Wednesday."
         $AutoAttendantWedsTimeRange = $null
     }
 
@@ -1931,6 +1934,7 @@ function New-NasTeamsAutoAttendant {
         }
     
     }else{
+        Write-Verbose "No business hours specified, therefore assuming $($AutoAttendant.Name) is closed on Thursday."
         $AutoAttendantThursTimeRange = $null
     }
 
@@ -1974,6 +1978,7 @@ function New-NasTeamsAutoAttendant {
         }
     
     }else{
+        Write-Verbose "No business hours specified, therefore assuming $($AutoAttendant.Name) is closed on Friday."
         $AutoAttendantFriTimeRange = $null
     }
 
@@ -2017,6 +2022,7 @@ function New-NasTeamsAutoAttendant {
         }
     
     }else{
+        Write-Verbose "No business hours specified, therefore assuming $($AutoAttendant.Name) is closed on Saturday."
         $AutoAttendantSatTimeRange = $null
     }
 
@@ -2060,21 +2066,50 @@ function New-NasTeamsAutoAttendant {
         }
     
     }else{
+        Write-Verbose "No business hours specified, therefore assuming $($AutoAttendant.Name) is closed on Sunday."
         $AutoAttendantSunTimeRange = $null
     }
 
-    $BusinessHoursParameters = @{
-        Name = "After Hours"
-        MondayHours = $AutoAttendantMonTimeRange
-        TuesdayHours = $AutoAttendantTueTimeRange
-        WednesdayHours = $AutoAttendantWedsTimeRange
-        ThursdayHours = $AutoAttendantThursTimeRange
-        FridayHours = $AutoAttendantFriTimeRange
-        SaturdayHours = $AutoAttendantSatTimeRange
-        SundayHours = $AutoAttendantSunTimeRange
+    #Check if ALL days have a value, if they don't then the auto attendant must be set to 24/7
+    if(([string]::IsNullOrEmpty($AutoAttendantMonTimeRange) -and [string]::IsNullOrEmpty($AutoAttendantTueTimeRange) -and [string]::IsNullOrEmpty($AutoAttendantWedsTimeRange)`
+    -and [string]::IsNullOrEmpty($AutoAttendantThursTimeRange) -and [string]::IsNullOrEmpty($AutoAttendantFriTimeRange) -and [string]::IsNullOrEmpty($AutoAttendantSatTimeRange)`
+    -and [string]::IsNullOrEmpty($AutoAttendantSunTimeRange))){
+        Write-Verbose "No business hours specified, therefore assuming $($AutoAttendant.Name) is open 24/7."
+        $AutoAttendantMonTimeRange = New-CsOnlineTimeRange -Start 00:00 -End 1.00:00
+        $AutoAttendantTueTimeRange = New-CsOnlineTimeRange -Start 00:00 -End 1.00:00
+        $AutoAttendantWedsTimeRange = New-CsOnlineTimeRange -Start 00:00 -End 1.00:00
+        $AutoAttendantThursTimeRange = New-CsOnlineTimeRange -Start 00:00 -End 1.00:00
+        $AutoAttendantFriTimeRange = New-CsOnlineTimeRange -Start 00:00 -End 1.00:00
+        $AutoAttendantSatTimeRange = New-CsOnlineTimeRange -Start 00:00 -End 1.00:00
+        $AutoAttendantSunTimeRange = New-CsOnlineTimeRange -Start 00:00 -End 1.00:00
+
+        $BusinessHoursParameters = @{
+            Name = "After Hours"
+            MondayHours = $AutoAttendantMonTimeRange
+            TuesdayHours = $AutoAttendantTueTimeRange
+            WednesdayHours = $AutoAttendantWedsTimeRange
+            ThursdayHours = $AutoAttendantThursTimeRange
+            FridayHours = $AutoAttendantFriTimeRange
+            SaturdayHours = $AutoAttendantSatTimeRange
+            SundayHours = $AutoAttendantSunTimeRange
+        }
+    }else{
+        Write-Verbose "Configuring specified business hours for: $($AutoAttendant.Name)"
+        $BusinessHoursParameters = @{
+            Name = "After Hours"
+            MondayHours = $AutoAttendantMonTimeRange
+            TuesdayHours = $AutoAttendantTueTimeRange
+            WednesdayHours = $AutoAttendantWedsTimeRange
+            ThursdayHours = $AutoAttendantThursTimeRange
+            FridayHours = $AutoAttendantFriTimeRange
+            SaturdayHours = $AutoAttendantSatTimeRange
+            SundayHours = $AutoAttendantSunTimeRange
+        }
     }
 
+    # Create the online schedule from above configuration
     $AutoAttendantBusinessHours = New-CsOnlineSchedule @BusinessHoursParameters -WeeklyRecurrentSchedule -Complement
+    Write-Verbose "Business hours configured for: $($AutoAttendant.Name)"
 
     #Basic call flow
     $defaultMenu = New-CsAutoAttendantMenu -Name "Default Menu" -MenuOptions @($menuOption)
