@@ -4,7 +4,7 @@ Building out several Auto Attendants, Call Queues and Resource Accounts in Micro
 
 The module can be used to take the "RGSConfig.zip" file from Skype for Business and convert it into an Excel workbook that can be used to build the configuration in Teams.
 
-NOTE: Only supports Powershell 7.0 and above.
+NOTE: Only supports Powershell 7.0 and above.  
 CREDIT: github.com/lazywinadmin for the Remove-StringSpecialCharacter function.
 ## Pre-Requirements
 1. Install the ImportExcel module - Run as Administrator in PowerShell: Install-Module ImportExcel
