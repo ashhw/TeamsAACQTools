@@ -5,10 +5,34 @@ Building out several Auto Attendants, Call Queues and Resource Accounts in Micro
 The module can be used to take the "RGSConfig.zip" file from Skype for Business and convert it into an Excel workbook that can be used to build the configuration in Teams.
 
 NOTE: Only supports Powershell 7.0 and above.
-## Installation
+## Pre-Requirements
+1. Install the ImportExcel module - Run as Administrator in PowerShell: Install-Module ImportExcel
+2. Install the MicrosoftTeams Module - Run as Administrator in PowerShell: Install-Module MicrosoftTeams
+3. Download ffmpeg - Choose your OS and download from here: https://www.ffmpeg.org/download.html
+    a. Copy this to your chosen location, example "C:\ffmpeg"
+
+NOTE: You can also specify the -InstallModules switch to provide an interactive approach to install the required modules. Do not use if you are using as part of an automation job.
+## Module Installation
 1. Download the module from the github repository.
 2. Copy the TeamsAACQTools folder into your PowerShell module repository on your local workstation.
 3. Open PowerShell and run "Import-Module TeamsAACQTools".
+
+**Export the RGS configuration**
+To export the Response Group configuration from Skype for Business, run the following command on the Skype for Business Management Shell:
+Example: "Export-CsRgsConfiguration -Source "ApplicationServer:my-sfb-fe01.somedomain.com" -FileName "C:\Exports\Rgs.zip""
+Note: Amend the command to suit the Skype environment.
+
+**Build the Excel workbook**
+Once you have the RGSConfig.zip (Unzip this to your chosen location) exported from Skype for Business, you can build the Excel workbook using the following example command:
+Import-NasAACQData -rootFolder "C:\AACQ\RgsImportExport" -ffmpeglocation "C:\ffmpeg\bin\ffmpeg.exe" -TenantDomain "mytenant.onmicrosoft.com" -CQRAPrefix "ra_cq_" -AARAPrefix "ra_aa_" -cqReplacementSuffix "CQ" -aaReplacementSuffix "AA" -Verbose
+
+**Build the Call Queues in Teams**
+Once you have built the AACQDataImport.xlsx file and verified that the data is correct, you can run it against Teams to build the Call Queues, along with Resource Accounts and Resource Account Association:
+Import-NasCQ -CQData "C:\AACQ\RgsImportExport\AACQDataImport-TestLab.xlsx"
+
+**Build the Auto Attendants in Teams**
+Once you have built the Call Queues in Teams, you can run the Auto Attendant function to build the Auto Attendants and associate with the Call Queues (If reuqired), along with Resource Accounts and Resource Account Association:
+Import-NasAA -AAData "C:\AACQ\RgsImportExport\AACQDataImport-TestLab.xlsx"
 
 ## Import-NasAACQData
 Build Excel workbook by specifying the Resource Account UPN prefix
