@@ -297,22 +297,7 @@ function Confirm-InstalledModule {
     
 }
 function Confirm-NasValidTarget{
-    <#
-    .SYNOPSIS
-        Synopsis
-    .DESCRIPTION
-        Description here.
-    .EXAMPLE
-        PS C:\> 
-        This example 
-    .EXAMPLE
-        Example 2 here
-    .INPUTS
-        None.
-    .OUTPUTS
-        None.
-    .NOTES
-    #>
+
     [CmdletBinding()]
     param (
         [Parameter(ValueFromPipeline)]
@@ -328,22 +313,7 @@ function Confirm-NasValidTarget{
     }
 }
 function Convert-NasImportMusicFile{
-        <#
-    .SYNOPSIS
-        Synopsis
-    .DESCRIPTION
-        Description here.
-    .EXAMPLE
-        PS C:\> 
-        This example 
-    .EXAMPLE
-        Example 2 here
-    .INPUTS
-        None.
-    .OUTPUTS
-        None.
-    .NOTES
-    #>
+
     [CmdletBinding()]
     param (
         [Parameter(ValueFromPipeline)]
@@ -443,22 +413,7 @@ function Get-NASTeamsLanguages {
     $TeamsLanguages | Sort-Object LanguageID | Export-Excel -Path "$rootFolder\AACQDataImport.xlsx" -WorksheetName "Languages" -NoNumberConversion "Name" -BoldTopRow -AutoSize
 }
 function Get-NASAgentGuid {
-    <#
-    .SYNOPSIS
-        Synopsis
-    .DESCRIPTION
-        Description here.
-    .EXAMPLE
-        PS C:\> 
-        This example 
-    .EXAMPLE
-        Example 2 here
-    .INPUTS
-        None.
-    .OUTPUTS
-        None.
-    .NOTES
-    #>
+
     [CmdletBinding()]
     param (
         # Parameter help description
@@ -574,19 +529,11 @@ function Get-NASObjectGuid {
 function Import-NasAACQData {
     <#
     .SYNOPSIS
-        Synopsis
+        Used to Build the Excel workbook from the RGS Configuration from Skype for Business.
     .DESCRIPTION
-        Description here.
+        Once you have the RGSConfig.zip (Unzip this to your chosen location) exported from Skype for Business, you can build the Excel workbook using the example command.
     .EXAMPLE
-        PS C:\> 
-        This example 
-    .EXAMPLE
-        Example 2 here
-    .INPUTS
-        None.
-    .OUTPUTS
-        None.
-    .NOTES
+        Import-NasAACQData -rootFolder "C:\AACQ\RgsImportExport" -ffmpeglocation "C:\ffmpeg\bin\ffmpeg.exe" -TenantDomain "mytenant.onmicrosoft.com" -CQRAPrefix "ra_cq_" -AARAPrefix "ra_aa_" -cqReplacementSuffix "CQ" -aaReplacementSuffix "AA" -Verbose
     #>
     [CmdletBinding()]
     param (
@@ -1314,19 +1261,11 @@ function Import-NasAACQData {
 Function Import-NasAA {
     <#
     .SYNOPSIS
-        Synopsis
+        Used to build the Auto Attendants in Teams by specifying the Excel workbook.
     .DESCRIPTION
-        Description here.
+        Once you have built the Call Queues in Teams, you can run the Auto Attendant function to build the Auto Attendants and associate with the Call Queues (If reuqired), along with Resource Accounts and Resource Account Association.
     .EXAMPLE
-        PS C:\> 
-        This example 
-    .EXAMPLE
-        Example 2 here
-    .INPUTS
-        None.
-    .OUTPUTS
-        None.
-    .NOTES
+        Import-NasAA -AAData "C:\AACQ\RgsImportExport\AACQDataImport-TestLab.xlsx"
     #>
     param (
         # Auto Attendant data import
@@ -1566,22 +1505,7 @@ Function Import-NasAA {
     Write-Host "Auto Attendant build completed, please refer to the transcript file for any errors."
 }
 function Backup-TeamsAutoAttendants{
-    <#
-    .SYNOPSIS
-        Synopsis
-    .DESCRIPTION
-        Description here.
-    .EXAMPLE
-        PS C:\> 
-        This example 
-    .EXAMPLE
-        Example 2 here
-    .INPUTS
-        None.
-    .OUTPUTS
-        None.
-    .NOTES
-    #>
+
     [CmdletBinding()]
     param (
         [Parameter(ValueFromPipeline)]
@@ -1677,22 +1601,7 @@ function Backup-TeamsAutoAttendants{
 
 }
 function New-NasTeamsAutoAttendant {
-    <#
-    .SYNOPSIS
-        Synopsis
-    .DESCRIPTION
-        Description here.
-    .EXAMPLE
-        PS C:\> 
-        This example 
-    .EXAMPLE
-        Example 2 here
-    .INPUTS
-        None.
-    .OUTPUTS
-        None.
-    .NOTES
-    #>
+
     [CmdletBinding()]
     param (
         #[Parameter(Mandatory=$True)]
@@ -2183,19 +2092,11 @@ function New-NasTeamsAutoAttendant {
 Function Import-NasCQ {
     <#
     .SYNOPSIS
-        Synopsis
+        Used to build the Call Queues in Teams from the Excel workbook.
     .DESCRIPTION
-        Description here.
+        Once you have built the AACQDataImport.xlsx file and verified that the data is correct, you can run it against Teams to build the Call Queues, along with Resource Accounts and Resource Account Association.
     .EXAMPLE
-        PS C:\> 
-        This example 
-    .EXAMPLE
-        Example 2 here
-    .INPUTS
-        None.
-    .OUTPUTS
-        None.
-    .NOTES
+        Import-NasCQ -CQData "C:\AACQ\RgsImportExport\AACQDataImport-TestLab.xlsx"
     #>
     param (  
         # Call Queue Name without the 'Optional' prefix      
@@ -2438,22 +2339,7 @@ Function Import-NasCQ {
     Write-Host "Call queue build completed, please refer to the transcript file for any errors."
 }
 function Backup-TeamsCallQueues{
-    <#
-    .SYNOPSIS
-        Synopsis
-    .DESCRIPTION
-        Description here.
-    .EXAMPLE
-        PS C:\> 
-        This example 
-    .EXAMPLE
-        Example 2 here
-    .INPUTS
-        None.
-    .OUTPUTS
-        None.
-    .NOTES
-    #>
+
     [CmdletBinding()]
     param (
         [Parameter(ValueFromPipeline)]
@@ -2548,22 +2434,7 @@ function Backup-TeamsCallQueues{
 
 }
 function New-NasTeamsCallQueue {
-    <#
-    .SYNOPSIS
-        Synopsis
-    .DESCRIPTION
-        Description here.
-    .EXAMPLE
-        PS C:\> 
-        This example 
-    .EXAMPLE
-        Example 2 here
-    .INPUTS
-        None.
-    .OUTPUTS
-        None.
-    .NOTES
-    #>
+
     [CmdletBinding()]
     param (
         #[Parameter(Mandatory=$True)]
@@ -2922,22 +2793,7 @@ function New-NasTeamsCallQueue {
     $CallQueue
 }
 function New-NasTeamsResourceAccount {
-    <#
-    .SYNOPSIS
-        Synopsis
-    .DESCRIPTION
-        Description here.
-    .EXAMPLE
-        PS C:\> 
-        This example 
-    .EXAMPLE
-        Example 2 here
-    .INPUTS
-        None.
-    .OUTPUTS
-        None.
-    .NOTES
-    #>
+
     param(
         [Parameter(Mandatory,ParameterSetName = 'CallQueue')]
         [NasCQ]$CallQueue,
@@ -3040,22 +2896,7 @@ function New-NasTeamsResourceAccount {
     }
 }
 function New-NasTeamsResourceAccountAssociation{
-    <#
-    .SYNOPSIS
-        Synopsis
-    .DESCRIPTION
-        Description here.
-    .EXAMPLE
-        PS C:\> 
-        This example 
-    .EXAMPLE
-        Example 2 here
-    .INPUTS
-        None.
-    .OUTPUTS
-        None.
-    .NOTES
-    #>
+
     [CmdletBinding()]
     param(
         [Parameter(Mandatory,ParameterSetName = 'CallQueue')]
