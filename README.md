@@ -5,6 +5,7 @@ Building out several Auto Attendants, Call Queues and Resource Accounts in Micro
 The module can be used to take the "RGSConfig.zip" file from Skype for Business and convert it into an Excel workbook that can be used to build the configuration in Teams.
 
 NOTE: Only supports Powershell 7.0 and above.
+CREDIT: github.com/lazywinadmin for the Remove-StringSpecialCharacter function.
 ## Pre-Requirements
 1. Install the ImportExcel module - Run as Administrator in PowerShell: Install-Module ImportExcel
 2. Install the MicrosoftTeams Module - Run as Administrator in PowerShell: Install-Module MicrosoftTeams
@@ -17,22 +18,56 @@ NOTE: You can also specify the -InstallModules switch to provide an interactive 
 2. Copy the TeamsAACQTools folder into your PowerShell module repository on your local workstation.
 3. Open PowerShell and run "Import-Module TeamsAACQTools".
 
+## What this won't do (yet!)
+**Auto Attendants**  
+- Associate greeting audio files
+- Music on Hold
+- Holidays/Holiday Actions
+- Dial Scope
+- Shared Voicemail
+- Shared Voicemail Transcription
+- Operator
+- Voice Inputs
+- Menu Options
+
+**Call Queues**  
+- Caller ID
+- Greeting
+- Calling Channels
+
 **Export the RGS configuration**  
-To export the Response Group configuration from Skype for Business, run the following command on the Skype for Business Management Shell:
-Example: "Export-CsRgsConfiguration -Source "ApplicationServer:my-sfb-fe01.somedomain.com" -FileName "C:\Exports\Rgs.zip""
+To export the Response Group configuration from Skype for Business, run the following command on the Skype for Business Management Shell:  
+```powershell
+Export-CsRgsConfiguration -Source "ApplicationServer:my-sfb-fe01.somedomain.com" -FileName "C:\Exports\Rgs.zip"
+```
 Note: Amend the command to suit the Skype environment.
 
 **Build the Excel workbook**  
-Once you have the RGSConfig.zip (Unzip this to your chosen location) exported from Skype for Business, you can build the Excel workbook using the following example command:
+Once you have the RGSConfig.zip (Unzip this to your chosen location) exported from Skype for Business, you can build the Excel workbook using the following example command:  
+```powershell
 Import-NasAACQData -rootFolder "C:\AACQ\RgsImportExport" -ffmpeglocation "C:\ffmpeg\bin\ffmpeg.exe" -TenantDomain "mytenant.onmicrosoft.com" -CQRAPrefix "ra_cq_" -AARAPrefix "ra_aa_" -cqReplacementSuffix "CQ" -aaReplacementSuffix "AA" -Verbose
+```
+NOTE: When the Excel workbook is built there are a few key items to note:
+- Agent Alert Time will be rounded up to the next multiple of 15 (Teams only allows multiples of 15)
+- If no OverflowThreshold is specified, but an OverflowAction is specified, then default OverflowThreshold will be set to 1
+- Agents will be displayed as a sip address without the "sip:" and seperated by commas
+- If no Langauge is specified, Language will be defaulted to en-GB
 
 **Build the Call Queues in Teams**  
-Once you have built the AACQDataImport.xlsx file and verified that the data is correct, you can run it against Teams to build the Call Queues, along with Resource Accounts and Resource Account Association:
+Once you have built the AACQDataImport.xlsx file and verified that the data is correct, you can run it against Teams to build the Call Queues, along with Resource Accounts and Resource Account Association:  
+```powershell
 Import-NasCQ -CQData "C:\AACQ\RgsImportExport\AACQDataImport-TestLab.xlsx"
+```
 
 **Build the Auto Attendants in Teams**  
-Once you have built the Call Queues in Teams, you can run the Auto Attendant function to build the Auto Attendants and associate with the Call Queues (If reuqired), along with Resource Accounts and Resource Account Association:
+Once you have built the Call Queues in Teams, you can run the Auto Attendant function to build the Auto Attendants and associate with the Call Queues (If reuqired), along with Resource Accounts and Resource Account Association:  
+```powershell
 Import-NasAA -AAData "C:\AACQ\RgsImportExport\AACQDataImport-TestLab.xlsx"
+```
+NOTE: When the Auto Attendants are being built:
+- Business Hours will be converted to the nearest multiple of 15, if this moves over to 00:00, then the Auto Attendant is assumed to be open 24 hours.
+- If the Business Hours are not specified on every day, it is assumed that the Auto Attendant is open 24/7.
+- If the Business Hours are not specified on specific days, it is assumed the Auto Attendant is open on every day except the days that don't have times specified.
 
 ## Import-NasAACQData
 Build Excel workbook by specifying the Resource Account UPN prefix
