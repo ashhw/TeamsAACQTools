@@ -70,11 +70,6 @@ NOTE: When the Auto Attendants are being built:
 - If the Business Hours are not specified on specific days, it is assumed the Auto Attendant is open on every day except the days that don't have times specified.
 
 ## Import-NasAACQData
-Build Excel workbook by specifying the Resource Account UPN prefix
-```powershell
-Import-NasAACQData [[-rootFolder] <string>] [[-ffmpeglocation] <string>] [[-TenantDomain] <string>] [[-AARAPrefix] <string>] [[-CQRAPrefix] <string>]
-Import-NasAACQData -rootFolder <"Location of RgsImportExport folder"> -ffmpeglocation <"Location of ffmpeg.exe"> -TenantDomain <"Tenant Domain"> -CQRAPrefix racq_ -AARAPrefix raaa_
-```
 ### Parameters
 **-rootFolder**  
 Specify the path to the RgsImportExport folder from the Skype for Business RGS export.
@@ -105,12 +100,6 @@ Specify the ffmpeg.exe path for the audio file conversion to .mp3.
 Specify this to skip the audio conversion as you would like to do this manually or will be using new audio files.
 
 ## Import-NasCQ
-Create the resource accounts, build the Call Queues and associate the resource accounts with the Call Queues.
-(Note: By default, you will be prompted to backup any existing Call Queues, to skip this step, use the -NoBackup switch.)
-```powershell
-Import-NasCQ [-CQData] <String> [-InstallModules] [-NoCreateCQ] [-NoRA]
-Import-NasCQ -CQData <"Path to Excel Workbook">
-```
 ### Parameters
 **-CQData**  
 Must be specified as the Excel workbook used to build the call queues and resource accounts.
@@ -128,12 +117,6 @@ Specify if you wish to exclude resource account creation.
 Specify if you wish to exclude the backup process. (Useful for Greenfield sites without any existing Call Queues)
 
 ## Import-NasAA
-Create the resource accounts, build the Auto Attendants and associate the resource accounts with the Auto Attendants.
-(Note: By default, you will be prompted to backup any existing Auto Attendants, to skip this step, use the -NoBackup switch.)
-```powershell
-Import-NasAA [-AAData] <String> [-InstallModules] [-NoCreateAA] [-NoRA]
-Import-NasCQ -AAData <"Path to Excel Workbook">
-```
 ### Parameters
 **-AAData**  
 Must be specified as the Excel workbook used to build the Auto Attendants and resource accounts.
