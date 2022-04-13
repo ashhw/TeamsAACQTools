@@ -1,4 +1,4 @@
-# NasAACQTools
+# TeamsAACQTools
 
 Building out several Auto Attendants, Call Queues and Resource Accounts in Microsoft Teams is painstakingly slow, especially if the deployment is a Skype for Business migration and you already have the data required. This module will help build out the Auto Attendants, Call Queues and Resource accounts from an Excel workbook.
 
@@ -17,20 +17,20 @@ NOTE: You can also specify the -InstallModules switch to provide an interactive 
 2. Copy the TeamsAACQTools folder into your PowerShell module repository on your local workstation.
 3. Open PowerShell and run "Import-Module TeamsAACQTools".
 
-**Export the RGS configuration**
+**Export the RGS configuration**  
 To export the Response Group configuration from Skype for Business, run the following command on the Skype for Business Management Shell:
 Example: "Export-CsRgsConfiguration -Source "ApplicationServer:my-sfb-fe01.somedomain.com" -FileName "C:\Exports\Rgs.zip""
 Note: Amend the command to suit the Skype environment.
 
-**Build the Excel workbook**
+**Build the Excel workbook**  
 Once you have the RGSConfig.zip (Unzip this to your chosen location) exported from Skype for Business, you can build the Excel workbook using the following example command:
 Import-NasAACQData -rootFolder "C:\AACQ\RgsImportExport" -ffmpeglocation "C:\ffmpeg\bin\ffmpeg.exe" -TenantDomain "mytenant.onmicrosoft.com" -CQRAPrefix "ra_cq_" -AARAPrefix "ra_aa_" -cqReplacementSuffix "CQ" -aaReplacementSuffix "AA" -Verbose
 
-**Build the Call Queues in Teams**
+**Build the Call Queues in Teams**  
 Once you have built the AACQDataImport.xlsx file and verified that the data is correct, you can run it against Teams to build the Call Queues, along with Resource Accounts and Resource Account Association:
 Import-NasCQ -CQData "C:\AACQ\RgsImportExport\AACQDataImport-TestLab.xlsx"
 
-**Build the Auto Attendants in Teams**
+**Build the Auto Attendants in Teams**  
 Once you have built the Call Queues in Teams, you can run the Auto Attendant function to build the Auto Attendants and associate with the Call Queues (If reuqired), along with Resource Accounts and Resource Account Association:
 Import-NasAA -AAData "C:\AACQ\RgsImportExport\AACQDataImport-TestLab.xlsx"
 
