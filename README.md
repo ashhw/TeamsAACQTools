@@ -51,7 +51,7 @@ NOTE: When the Excel workbook is built there are a few key items to note:
 - Agent Alert Time will be rounded up to the next multiple of 15 (Teams only allows multiples of 15)
 - If no OverflowThreshold is specified, but an OverflowAction is specified, then default OverflowThreshold will be set to 1
 - Agents will be displayed as a sip address without the "sip:" and seperated by commas
-- If no Langauge is specified, Language will be defaulted to en-GB
+- If no Language is specified, Language will be defaulted to en-GB
 
 **Build the Call Queues in Teams**  
 Once you have built the AACQDataImport.xlsx file and verified that the data is correct, you can run it against Teams to build the Call Queues, along with Resource Accounts and Resource Account Association:  
