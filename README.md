@@ -58,12 +58,15 @@ Once you have built the AACQDataImport.xlsx file and verified that the data is c
 ```powershell
 Import-NasCQ -CQData "C:\AACQ\RgsImportExport\AACQDataImport-TestLab.xlsx"
 ```
+By default this will prompt you to backup the Call Queues before you begin. You can skip this by specifying the -NoBackup switch.  
 
 **Build the Auto Attendants in Teams**  
 Once you have built the Call Queues in Teams, you can run the Auto Attendant function to build the Auto Attendants and associate with the Call Queues (If reuqired), along with Resource Accounts and Resource Account Association:  
 ```powershell
 Import-NasAA -AAData "C:\AACQ\RgsImportExport\AACQDataImport-TestLab.xlsx"
 ```
+By default this will prompt you to backup the Auto Attendants before you begin. You can skip this by specifying the -NoBackup switch.  
+
 NOTE: When the Auto Attendants are being built:
 - Business Hours will be converted to the nearest multiple of 15, if this moves over to 00:00, then the Auto Attendant is assumed to be open 24 hours.
 - If the Business Hours are not specified on every day, it is assumed that the Auto Attendant is open 24/7.
