@@ -963,6 +963,7 @@ function Import-NasAACQData {
             AutoAttendantName = $AutoAttendantName
             CleanedName = $CleanedWorkflowName
             SkypeName = $_.Name
+            SkypeSIPAddress = $_.PrimaryUri
             PhoneNumber = $LineURI
             LanguageID = $_.Language
             TimeZone = $_.TimeZone
