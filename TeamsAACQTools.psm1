@@ -742,8 +742,10 @@ function Import-NasAACQData {
     $hours = Import-Clixml -Path "$rootFolder\HoursOfBusiness.xml"\
 
     # Let's grab the call records for the workflows
-    Write-Verbose "Grabbing the call records from the CDR file"
-    $workflowCDRExport = Export-ResponseGroupCallRecords -Months 3 -CallDirection Inbound
+    # Lets look at this for a later date, call count for each response group
+    # Will need to think how to do this without access to CDR database when offline from SfB environment
+    #Write-Verbose "Grabbing the call records from the CDR file"
+    #$workflowCDRExport = Export-ResponseGroupCallRecords -Months 3 -CallDirection Inbound
 
     $ImportWorkflows = $Workflows | ForEach-Object{
 
