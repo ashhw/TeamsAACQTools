@@ -739,7 +739,7 @@ function Import-NasAACQData {
     $Workflows = Import-Clixml -Path "$rootFolder\Workflows.xml" | Sort-Object name
 
     Write-Verbose "Importing business hours from: $rootFolder\HoursOfBusiness.xml"
-    $hours = Import-Clixml -Path "$rootFolder\HoursOfBusiness.xml"\
+    $hours = Import-Clixml -Path "$rootFolder\HoursOfBusiness.xml"
 
     # Let's grab the call records for the workflows
     # Lets look at this for a later date, call count for each response group
