@@ -965,6 +965,7 @@ function Import-NasAACQData {
             SkypeName = $_.Name
             SkypeSIPAddress = $_.PrimaryUri
             PhoneNumber = $LineURI
+            Description = $_.Description
             LanguageID = $_.Language
             TimeZone = $_.TimeZone
             #HolidaySet = $_.HolidaySetIDList
