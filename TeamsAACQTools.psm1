@@ -526,6 +526,166 @@ function Get-NASObjectGuid {
         }
     }
 }
+
+function Export-ResponseGroupCallRecords {
+
+    [CmdletBinding()]
+    param (
+        [Parameter(ValueFromPipeline)]
+        [Int32]$Months = 3,
+        [Parameter(ValueFromPipeline)]
+        [string]$CallDirection = "Inbound"
+    )
+
+    try {
+        Write-Verbose "Grabbing services to find the CDR database."
+        $services = Get-CsService
+
+        $sqlSrvFqdn = (($services.where({$_.role -contains "Registrar"})).monitoringdatabase | Select-Object -First 1).split(":")[1]
+        Write-Verbose "Selected CDR database, FQDN: $sqlSrvFqdn"
+    }
+    catch {
+        Write-Error "Unable to find the CDR database."
+        break
+    }
+
+    # Get the current logged on user
+    $currentLoggedOnUser = [System.Security.Principal.WindowsIdentity]::GetCurrent().Name
+
+    # Define the SQL query from the parameter $CallDirection using switch
+    switch ($CallDirection) {
+        Inbound {$sqlQueryToRun = @"
+use LcsCDR;
+
+select
+--SessionDetails users
+User1.UserUri as User1Uri, User2.UserUri as User2Uri, StartedByUser.UserUri as StartedByUser,
+
+--VoipDetails
+--FromPhone.PhoneUri as FromPhoneUri, ConnectedPhone.PhoneUri as ConnectedPhoneUri,
+
+--SessionDetails stats
+SessionDetails.ResponseCode, SessionDetails.ResponseTime, SessionDetails.SessionEndTime,
+DateDiff(ss,SessionDetails.ResponseTime, SessionDetails.SessionEndTime) as 'Call Duration',
+
+--Client Versions
+Client1Version.ClientType as User1ClientType, Client2Version.ClientType as User2ClientType
+
+from SessionDetails
+--VoipDetails
+--join VoipDetails on SessionDetails.SessionIdTime = VoipDetails.SessionIdTime and SessionDetails.SessionIdSeq = VoipDetails.SessionIdSeq
+--left outer join Phones as FromPhone on FromPhone.PhoneId = VoipDetails.FromNumberId
+--left outer join Phones as ConnectedPhone on ConnectedPhone.PhoneId = VoipDetails.ConnectedNumberId
+
+--Users
+left outer join Users as User1 on User1.UserId = SessionDetails.User1Id
+left outer join Users as User2 on User2.UserId = SessionDetails.User2Id
+left outer join Users as StartedByUser on StartedByUser.UserId = SessionDetails.SessionStartedById
+
+--Used to filter response group service calls only
+left outer join ClientVersions as Client1Version on Client1Version.VersionId = SessionDetails.User1ClientVerId
+left outer join ClientVersions as Client2Version on Client2Version.VersionId = SessionDetails.User2ClientVerId
+
+where
+
+--Filter response group service calls only
+--Client1Version.ClientType = 1024 or 
+Client2Version.ClientType = 1024 and User2.UserUri not like '%+%'--'RTCC/4.0.0.0 Response_Group_Service'
+order by ResponseTime desc
+"@ }
+        Outbound {$sqlQueryToRun = @"
+use LcsCDR;
+
+select
+--SessionDetails users
+User1.UserUri as User1Uri, User2.UserUri as User2Uri, StartedByUser.UserUri as StartedByUser,
+
+--VoipDetails
+--FromPhone.PhoneUri as FromPhoneUri, ConnectedPhone.PhoneUri as ConnectedPhoneUri,
+
+--SessionDetails stats
+SessionDetails.ResponseCode, SessionDetails.ResponseTime, SessionDetails.SessionEndTime,
+DateDiff(ss,SessionDetails.ResponseTime, SessionDetails.SessionEndTime) as 'Call Duration',
+
+--Client Versions
+Client1Version.ClientType as User1ClientType, Client2Version.ClientType as User2ClientType
+
+from SessionDetails
+--VoipDetails
+--join VoipDetails on SessionDetails.SessionIdTime = VoipDetails.SessionIdTime and SessionDetails.SessionIdSeq = VoipDetails.SessionIdSeq
+--left outer join Phones as FromPhone on FromPhone.PhoneId = VoipDetails.FromNumberId
+--left outer join Phones as ConnectedPhone on ConnectedPhone.PhoneId = VoipDetails.ConnectedNumberId
+
+--Users
+left outer join Users as User1 on User1.UserId = SessionDetails.User1Id
+left outer join Users as User2 on User2.UserId = SessionDetails.User2Id
+left outer join Users as StartedByUser on StartedByUser.UserId = SessionDetails.SessionStartedById
+
+--Used to filter response group service calls only
+left outer join ClientVersions as Client1Version on Client1Version.VersionId = SessionDetails.User1ClientVerId
+left outer join ClientVersions as Client2Version on Client2Version.VersionId = SessionDetails.User2ClientVerId
+
+where
+
+--Filter response group service calls only
+--Client1Version.ClientType = 1024 or 
+Client1Version.ClientType = 1024 and User1.UserUri not like '%+%' and User2.UserUri like '%+%'--'RTCC/4.0.0.0 Response_Group_Service'
+order by ResponseTime desc
+"@}
+    }
+
+    # Try invoke the SQL query and catch any errors
+    try{
+        Write-Verbose "Invoking SQL Query on $sqlSrvFqdn"
+        $sqlInvoke = Invoke-Sqlcmd -ServerInstance $sqlSrvFqdn -Query $sqlQueryToRun
+    } catch {
+        Write-Error "Error invoking command on SQL Server: $sqlSrvFqdn. Please check FQDN and the current logged on user: $currentLoggedOnUser has permissions to access SQL Server."
+        break
+    } #end try
+
+    # Build the output based on the last x amount of months from $months
+    $sqlOutput = $sqlInvoke | Where-Object{($_.ResponseTime -gt (get-date).AddMonths(-$months))}
+
+    if($CallDirection -eq "Outbound"){
+        # Loop through the output and create a new PS object for each row with name and datetime
+        $sqlResult = foreach ($sqlOutputItem in $sqlOutput){
+            [PSCustomObject]@{
+                ResponseGroup = $sqlOutputItem.User1Uri
+                DateTime = $sqlOutputItem.ResponseTime
+            }
+        } # End of foreach
+    }else{
+        # Loop through the output and create a new PS object for each row with name and datetime
+        $sqlResult = foreach ($sqlOutputItem in $sqlOutput){
+            [PSCustomObject]@{
+                ResponseGroup = $sqlOutputItem.User2Uri
+                DateTime = $sqlOutputItem.ResponseTime
+            }
+        } # End of foreach
+    }
+
+    # Build the output by grouping the name and grabbing the count of each calls
+    $sqlResultCount = $sqlresult | Group-Object ResponseGroup | Sort-Object Count | Select-Object Name,Count
+
+    # Grab the last call entry for each response group
+    $sqlResultLastCalled = $sqlresult | Group-Object ResponseGroup | ForEach-Object{$_ | Select-Object -ExpandProperty Group | Select-Object -First 1} | Sort-Object DateTime
+
+    # Loop through the SQL result count and create new PS object for each row with name, last call date and count
+    Write-Verbose "Building output..."
+    $sqlAllResult = foreach ($sqlResultCountItem in $sqlResultCount){
+
+        $lastCall = $null
+        $lastCall = $sqlResultLastCalled | Where-Object{$_.ResponseGroup -eq $sqlResultCountItem.Name} | Select-Object -First 1 -Unique
+        Write-Verbose "Response Group name is: $($sqlResultCountItem.Name) and the last call is: $($lastCall.DateTime)"
+
+        [PSCustomObject]@{
+            ResponseGroupName = $sqlResultCountItem.Name
+            LastCallDate = $lastCall.DateTime
+            CallCount = $sqlResultCountItem.Count
+        }
+    } # End of foreach
+    Write-Verbose "Call records output built."
+}
 function Import-NasAACQData {
     <#
     .SYNOPSIS
@@ -579,12 +739,24 @@ function Import-NasAACQData {
     $Workflows = Import-Clixml -Path "$rootFolder\Workflows.xml" | Sort-Object name
 
     Write-Verbose "Importing business hours from: $rootFolder\HoursOfBusiness.xml"
-    $hours = Import-Clixml -Path "$rootFolder\HoursOfBusiness.xml"
+    $hours = Import-Clixml -Path "$rootFolder\HoursOfBusiness.xml"\
+
+    # Let's grab the call records for the workflows
+    Write-Verbose "Grabbing the call records from the CDR file"
+    $workflowCDRExport = Export-ResponseGroupCallRecords -Months 3 -CallDirection Inbound
 
     $ImportWorkflows = $Workflows | ForEach-Object{
 
         Write-Verbose "Building workflow object: $($_.Name) - $($_.Identity.InstanceId.Guid)"
         $fileLocation = ""
+
+        ### Lets look at this for a later date, call count for each response group
+        ### Will need to think how to do this without access to CDR database when offline from SfB environment
+        #$WorkflowCallCount, $WorkflowLastCallDate = $null
+
+        #$WorkflowCallCount = ($workflowCDRExport.where({$_.primaryuri.split(":")[1] -eq $_.ResponseGroupName})).CallCount
+        #Write-verbose "Call count = $workflowcallcount"
+        #$WorkflowLastCallDate = ($workflowCDRExport.where({$_.primaryuri.split(":")[1] -eq $_.ResponseGroupName})).LastCallDate
 
         if($_.CustomMusicOnHoldFile.OriginalFileName){
             Write-Verbose "TRUE: $($_.CustomMusicOnHoldFile.UniqueName)"
@@ -813,6 +985,8 @@ function Import-NasAACQData {
             CustomMusicOnHoldFileID = $CustomMusicOnHoldFileID
             CustomMusicOnHoldFileName = $CustomMusicOnHoldFileName
             MusicOnHoldAudioFilePath = $fileLocation.replace(".wav",".mp3")
+            #CallCount = $WorkflowCallCount
+            #LastCallDate = $WorkflowLastCallDate
             Active = $_.Active
         }
         Write-Verbose "Configured the workflow object: $($_.Name) - $($_.Identity.InstanceId.Guid)"
