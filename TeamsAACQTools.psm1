@@ -3098,7 +3098,7 @@ function New-NasTeamsResourceAccountAssociation{
 
     $i = $null
     $i = 0
-    while (!(Get-CsOnlineApplicationInstance -Identities $ResourceAccountObjectID)) {
+    while (!(Get-CsOnlineApplicationInstance -Identity $ResourceAccountObjectID)) {
         Write-Verbose "$InfoStringPrefix $RATypeAccountString Resource account: $ResourceAccountObjectID is not ready yet"
         if($i -gt 5){
             Write-Error "$ErrorStringPrefix $RATypeAccountString $ResourceAccountObjectID is not available for use yet. Please try again later."
@@ -3125,7 +3125,7 @@ function New-NasTeamsResourceAccountAssociation{
         }
     }
 
-    if(Get-CsOnlineApplicationInstance -Identities $ResourceAccountObjectID){
+    if(Get-CsOnlineApplicationInstance -Identity $ResourceAccountObjectID){
         $NewCQAppInstanceParameters = @{
             Identities = $ResourceAccountObjectID
             ConfigurationId = $RAConfigurationID
