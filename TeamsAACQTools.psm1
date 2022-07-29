@@ -1814,20 +1814,20 @@ function New-NasTeamsAutoAttendant {
     ## Greeting text prompt
     if(!([string]::IsNullOrEmpty($AutoAttendant.DefaultActionTextToSpeech))){
         $greetingText = $AutoAttendant.DefaultActionTextToSpeech
-        $defaultGreetingPrompt = New-CsAutoAttendantPrompt -TextToSpeechPrompt $greetingText
+        $defaultGreetingPrompt = New-CsAutoAttendantPrompt -TextToSpeechPrompt $greetingText -ActiveType TextToSpeech 
         Write-verbose "$InfoStringPrefix $AAVerboseTypeString Greeting text set to: $greetingText"
     }else{
-        $defaultGreetingPrompt = $null
+        $defaultGreetingPrompt = New-CsAutoAttendantprompt -TextToSpeechPrompt "No Prompt Required" -ActiveType None
         Write-Verbose "$InfoStringPrefix $AAVerboseTypeString No greeting text specified."
     }
 
     ## After hours text prompt
     if(!([string]::IsNullOrEmpty($AutoAttendant.NonBusinessHoursActionTextToSpeechPrompt))){
         $afterHoursText = $AutoAttendant.NonBusinessHoursActionTextToSpeechPrompt
-        $afterHoursGreetingPrompt = New-CsAutoAttendantPrompt -TextToSpeechPrompt $afterHoursText
+        $afterHoursGreetingPrompt = New-CsAutoAttendantPrompt -TextToSpeechPrompt $afterHoursText -ActiveType TextToSpeech
         Write-verbose "$InfoStringPrefix $AAVerboseTypeString After hours greeting text set to: $afterHoursText"
     }else{
-        $afterHoursGreetingPrompt = $null
+        $afterHoursGreetingPrompt = New-CsAutoAttendantprompt -TextToSpeechPrompt "No Prompt Required" -ActiveType None
         Write-Verbose "$InfoStringPrefix $AAVerboseTypeString No after hours greeting text"
     }
 
@@ -1841,6 +1841,77 @@ function New-NasTeamsAutoAttendant {
         $targetCQID = $null
         $menuOption = New-CsAutoAttendantMenuOption -Action DisconnectCall -DtmfResponse Automatic
         Write-Verbose "$InfoStringPrefix $AAVerboseTypeString No target, setting menu option to disconnect"
+    }
+
+    ## Default action target
+    if($AutoAttendant.DefaultAction -ne "Disconnect"){
+        Write-Verbose "$InfoStringPrefix $AAVerboseTypeString DefaultAction not set to Disconnect and therefore setting the new DefaultAction"
+        Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Checking if DefaultAction: $($AutoAttendant.DefaultActionTargetUri) is a phone number"
+        if($AutoAttendant.DefaultActionTargetUri -like "tel:*" -or $AutoAttendant.DefaultActionTargetUri -like "+*"){
+            Write-Verbose "$InfoStringPrefix $AAVerboseTypeString DefaultActionTargetUri: $($AutoAttendant.DefaultActionTargetUri) is a phone number, setting the value"
+            $defaultTarget = New-CsAutoAttendantCallableEntity -Identity $AutoAttendant.DefaultActionTargetUri -Type ExternalPstn
+            $defaultMenuOption = New-CsAutoAttendantMenuOption -Action TransferCallToTarget -CallTarget $defaultTarget -DtmfResponse Automatic
+        }else{
+            Write-Verbose "$InfoStringPrefix $AAVerboseTypeString DefaultActionTargetUri: $($AutoAttendant.DefaultActionTargetUri) is not a phone number"
+            if($AutoAttendant.DefaultActionTargetUri -like "sip:*"){
+                Write-Verbose "$InfoStringPrefix $AAVerboseTypeString DefaultActionTargetUri: $($AutoAttendant.DefaultActionTargetUri) is a sip address"
+                Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Stripping sip: from the DefaultActionTargetUri $($AutoAttendant.DefaultActionTargetUri) to grab objectID"
+                $defaultTargetCheck = $AutoAttendant.DefaultActionTargetUri.substring(4)
+            }else{
+                if($AutoAttendant.DefaultActionTargetUri -like "*@*.*"){
+                    Write-Verbose "$InfoStringPrefix $AAVerboseTypeString DefaultActionTargetUri is not prefixed with sip: or tel:, but is a valid email address/upn"
+                    $defaultTargetCheck = $AutoAttendant.DefaultActionTargetUri
+                }
+            }
+            Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Checking if DefaultActionTargetUri: $($AutoAttendant.DefaultActionTargetUri) exists."
+
+            if(($defaultTargetCheck | Get-NASObjectGuid).objguid.guid){
+                $defaultTargetGuid = ($defaultTargetCheck | Get-NASObjectGuid).objguid.guid
+
+                $userobject = $null
+                $userobject = Get-CsOnlineUser $defaultTargetGuid
+
+                $defaultTargetUserType = $null
+
+                if($userobject.OwnerUrn -eq $null){
+                    if($userobject.Department -like "*Common Area*" -or $userobject.Department -like "*CAP*"){
+                        $defaultTargetUserType = "Common Area Phone"
+                    }else{
+                        $defaultTargetUserType = "User"
+                    }
+                }elseif($userobject.OwnerUrn -eq 'urn:trustedonlineplatformapplication:11cd3e2e-fccb-42ad-ad00-878b93575e07') {
+                    $defaultTargetUserType = "Call Queue"
+                }elseif($userobject.OwnerUrn -eq 'urn:trustedonlineplatformapplication:ce933385-9390-45d1-9512-c8d228074e07') {
+                    $defaultTargetUserType = "Auto Attendant"
+                }elseif($userobject.OwnerUrn -eq 'urn:device:roomsystem'){
+                    $defaultTargetUserType = "Microsoft Teams Room"
+                }else{
+                    $defaultTargetUserType = $userobject.OwnerUrn
+                }
+
+                Write-Verbose "The default target user type is $defaultTargetUserType"
+                if($defaultTargetUserType -eq "User"){
+                    Write-Verbose "Default Target User Type is $defaultTargetUserType"
+                    Write-Verbose "$InfoStringPrefix $AAVerboseTypeString DefaultActionTargetUri is valid, setting to: $defaultTargetGuid"
+                    $defaultTarget = New-CsAutoAttendantCallableEntity -Identity $defaultTargetGuid -Type User
+                    $defaultMenuOption = New-CsAutoAttendantMenuOption -Action TransferCallToTarget -CallTarget $defaultTarget -DtmfResponse Automatic
+                }elseif($defaultTargetUserType -eq "Call Queue" -or $defaultTargetUserType -eq "Auto Attendant"){
+                    Write-Verbose "Default Target User Type is $defaultTargetUserType"
+                    Write-Verbose "$InfoStringPrefix $AAVerboseTypeString DefaultActionTargetUri is valid, setting to: $defaultTargetGuid"
+                    $defaultTarget = New-CsAutoAttendantCallableEntity -Identity $defaultTargetGuid -Type ApplicationEndpoint
+                    $defaultMenuOption = New-CsAutoAttendantMenuOption -Action TransferCallToTarget -CallTarget $defaultTarget -DtmfResponse Automatic
+                }else{
+                    Write-Error "Default Target User Type not determined, skipping setting default target"
+                }
+            }else{
+                Write-Error "$ErrorStringPrefix $AAVerboseTypeString DefaultActionTargetUri: $afterHoursTargetCheck doesn't exist/cannot find GUID."
+                Write-Verbose "$InfoStringPrefix $AAVerboseTypeString As target cannot be found, set the Default menu option to Disconnect."
+                $defaultMenuOption = New-CsAutoAttendantMenuOption -Action DisconnectCall -DtmfResponse Automatic
+            }
+        }
+    }else{
+        Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Default action set to Disconnect, setting default menu option to Disconnect."
+        $defaultMenuOption = New-CsAutoAttendantMenuOption -Action DisconnectCall -DtmfResponse Automatic
     }
 
     #Null out the previous timespan objects
@@ -2200,13 +2271,17 @@ function New-NasTeamsAutoAttendant {
 
     #Basic call flow
     $defaultMenu = New-CsAutoAttendantMenu -Name "Default Menu" -MenuOptions @($menuOption)
-    $defaultCallFlow = New-CsAutoAttendantCallFlow -Name "Default call flow" -Menu $defaultMenu -Greetings @($defaultGreetingPrompt)
+    if(($defaultGreetingPrompt).TextToSpeechPrompt -eq "No Prompt Required"){
+        $defaultCallFlow = New-CsAutoAttendantCallFlow -Name "Default call flow" -Menu $defaultMenu
+    }else{
+        $defaultCallFlow = New-CsAutoAttendantCallFlow -Name "Default call flow" -Menu $defaultMenu -Greetings @($defaultGreetingPrompt)
+    }
 
-    ## Non business hours target
+    ## Non business hours action target
     if($AutoAttendant.NonBusinessHoursAction -ne "Disconnect"){
         Write-Verbose "$InfoStringPrefix $AAVerboseTypeString NonBusinessHoursAction not set to Disconnect and therefore setting the new NonBusinessHoursAction"
         Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Checking if NonBusinessHoursAction: $($AutoAttendant.NonBusinessHoursActionUri) is a phone number"
-        if($AutoAttendant.NonBusinessHoursActionUri -like "tel:*"){
+        if($AutoAttendant.NonBusinessHoursActionUri -like "tel:*" -or $AutoAttendant.NonBusinessHoursActionUri -like "+*"){
             Write-Verbose "$InfoStringPrefix $AAVerboseTypeString NonBusinessHoursActionUri: $($AutoAttendant.NonBusinessHoursActionUri) is a phone number, setting the value"
             $afterHoursTarget = New-CsAutoAttendantCallableEntity -Identity $AutoAttendant.NonBusinessHoursActionUri -Type ExternalPstn
             $afterHoursMenuOption = New-CsAutoAttendantMenuOption -Action TransferCallToTarget -CallTarget $afterHoursTarget -DtmfResponse Automatic
@@ -2217,28 +2292,70 @@ function New-NasTeamsAutoAttendant {
                 Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Stripping sip: from the NonBusinessHoursActionUri $($AutoAttendant.NonBusinessHoursActionUri) to grab objectID"
                 $afterHoursTargetCheck = $AutoAttendant.NonBusinessHoursActionUri.substring(4)
             }else{
-                Write-Verbose "$InfoStringPrefix $AAVerboseTypeString NonBusinessHoursActionUri is not a sip address"
-                $afterHoursTargetCheck = $AutoAttendant.NonBusinessHoursActionUri
+                if($AutoAttendant.NonBusinessHoursActionUri -like "*@*.*"){
+                    Write-Verbose "$InfoStringPrefix $AAVerboseTypeString NonBusinessHoursActionUri is not prefixed with sip: or tel:, but is a valid email address/upn"
+                    $afterHoursTargetCheck = $AutoAttendant.NonBusinessHoursActionUri
+                }
             }
-            Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Checking if NonBusinessHoursActionUri: $($AutoAttendant.NonBusinessHoursActionUri) is valid"
+            Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Checking if NonBusinessHoursActionUri: $($AutoAttendant.NonBusinessHoursActionUri) exists."
+
             if(($afterHoursTargetCheck | Get-NASObjectGuid).objguid.guid){
                 $afterHoursTargetGuid = ($afterHoursTargetCheck | Get-NASObjectGuid).objguid.guid
 
-                Write-Verbose "$InfoStringPrefix $AAVerboseTypeString NonBusinessHoursActionUri is valid, setting to: $afterHoursTargetGuid"
-                $afterHoursTarget = New-CsAutoAttendantCallableEntity -Identity $afterHoursTargetGuid -Type applicationendpoint
-                $afterHoursMenuOption = New-CsAutoAttendantMenuOption -Action TransferCallToTarget -CallTarget $afterHoursTarget -DtmfResponse Automatic
+                $userobject = $null
+                $userobject = Get-CsOnlineUser $afterHoursTargetGuid
+
+                $afterHoursTargetUserType = $null
+
+                if($userobject.OwnerUrn -eq $null){
+                    if($userobject.Department -like "*Common Area*" -or $userobject.Department -like "*CAP*"){
+                        $afterHoursTargetUserType = "Common Area Phone"
+                    }else{
+                        $afterHoursTargetUserType = "User"
+                    }
+                }elseif($userobject.OwnerUrn -eq 'urn:trustedonlineplatformapplication:11cd3e2e-fccb-42ad-ad00-878b93575e07') {
+                    $afterHoursTargetUserType = "Call Queue"
+                }elseif($userobject.OwnerUrn -eq 'urn:trustedonlineplatformapplication:ce933385-9390-45d1-9512-c8d228074e07') {
+                    $afterHoursTargetUserType = "Auto Attendant"
+                }elseif($userobject.OwnerUrn -eq 'urn:device:roomsystem'){
+                    $afterHoursTargetUserType = "Microsoft Teams Room"
+                }else{
+                    $afterHoursTargetUserType = $userobject.OwnerUrn
+                }
+
+                Write-Verbose "The after hours target user type is $afterHoursTargetUserType"
+                if($afterHoursTargetUserType -eq "User"){
+                    Write-Verbose "After hours Target User Type is $afterHoursTargetUserType"
+                    Write-Verbose "$InfoStringPrefix $AAVerboseTypeString NonBusinessHoursActionUri is valid, setting to: $afterHoursTargetGuid"
+                    $afterHoursTarget = New-CsAutoAttendantCallableEntity -Identity $afterHoursTargetGuid -Type User
+                    $afterHoursMenuOption = New-CsAutoAttendantMenuOption -Action TransferCallToTarget -CallTarget $afterHoursTarget -DtmfResponse Automatic
+                }elseif($afterHoursTargetUserType -eq "Call Queue" -or $afterHoursTargetUserType -eq "Auto Attendant"){
+                    Write-Verbose "After hours User Type is $afterHoursTargetUserType"
+                    Write-Verbose "$InfoStringPrefix $AAVerboseTypeString NonBusinessHoursActionUri is valid, setting to: $afterHoursTargetGuid"
+                    $afterHoursTarget = New-CsAutoAttendantCallableEntity -Identity $afterHoursTargetGuid -Type ApplicationEndpoint
+                    $afterHoursMenuOption = New-CsAutoAttendantMenuOption -Action TransferCallToTarget -CallTarget $afterHoursTarget -DtmfResponse Automatic
+                }else{
+                    Write-Error "After hours Target User Type not determined, skipping setting default target"
+                }
             }else{
                 Write-Error "$ErrorStringPrefix $AAVerboseTypeString NonBusinessHoursActionUri: $afterHoursTargetCheck doesn't exist/cannot find GUID."
+                Write-Verbose "$InfoStringPrefix $AAVerboseTypeString As target cannot be found, set the After hours menu option to Disconnect."
+                $afterHoursMenuOption = New-CsAutoAttendantMenuOption -Action DisconnectCall -DtmfResponse Automatic
             }
         }
     }else{
-        Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Non business hours set to Disconnect, setting after hours menu option"
+        Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Default action set to Disconnect, setting After hours menu option to Disconnect."
         $afterHoursMenuOption = New-CsAutoAttendantMenuOption -Action DisconnectCall -DtmfResponse Automatic
     }
 
     #After hours further configuration
     $afterHoursMenu = New-CsAutoAttendantMenu -Name "AA menu1" -MenuOptions @($afterHoursMenuOption)
-    $afterHoursCallFlow = New-CsAutoAttendantCallFlow -Name "After Hours" -Menu $afterHoursMenu -Greetings @($afterHoursGreetingPrompt)
+
+    if(($afterHoursGreetingPrompt).TextToSpeechPrompt -eq "No Prompt Required"){
+        $afterHoursCallFlow = New-CsAutoAttendantCallFlow -Name "After Hours" -Menu $afterHoursMenu
+    }else{
+        $afterHoursCallFlow = New-CsAutoAttendantCallFlow -Name "After Hours" -Menu $afterHoursMenu -Greetings @($afterHoursGreetingPrompt)
+    }
     $afterHoursCallHandlingAssociation = New-CsAutoAttendantCallHandlingAssociation -Type AfterHours -ScheduleId $AutoAttendantBusinessHours.Id -CallFlowId $afterHoursCallFlow.Id
 
     Write-Verbose "$InfoStringPrefix $AAVerboseTypeString $($AutoAttendant.Name) - Configured Auto Attendant options"
@@ -3126,13 +3243,18 @@ function New-NasTeamsResourceAccountAssociation{
     }
 
     if(Get-CsOnlineApplicationInstance -Identity $ResourceAccountObjectID){
-        $NewCQAppInstanceParameters = @{
-            Identities = $ResourceAccountObjectID
-            ConfigurationId = $RAConfigurationID
-            ConfigurationType = $ConfigurationType
-            ErrorAction = 'Stop'
+        try{
+            $NewCQAppInstanceParameters = @{
+                Identities = $ResourceAccountObjectID
+                ConfigurationId = $RAConfigurationID
+                ConfigurationType = $ConfigurationType
+                ErrorAction = 'Stop'
+            }
+            New-CsOnlineApplicationInstanceAssociation @NewCQAppInstanceParameters -ErrorAction Stop
+        }catch{
+            Write-Verbose "$ErrorStringPrefix $RATypeAccountString $ResourceAccountObjectID is not available for use yet. Please try again later."
+            Write-Error "$ErrorStringPrefix $RATypeAccountString $ResourceAccountObjectID is not available for use yet. Please try again later."
         }
-        New-CsOnlineApplicationInstanceAssociation @NewCQAppInstanceParameters -ErrorAction Stop
     }else{
         Write-Error "$ErrorStringPrefix $RATypeAccountString $ResourceAccountObjectID cannot be associated. `
         Check the application instance and resource account. `
