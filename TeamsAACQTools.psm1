@@ -159,6 +159,7 @@ class NasAA {
 
     [string]$DefaultAction
     [string]$DefaultActionTextToSpeech
+    [string]$DefaultActionTargetUri
 
     # Nom business hours action
     [ValidateSet('Disconnect','Forward','Voicemail','SharedVoicemail')]
@@ -1481,6 +1482,7 @@ Function Import-NasAA {
     $AAVerboseTypeString = ":: AUTO ATTENDANT ::"
     $ObjectCheckVerboseTypeString = ":: OBJECT CHECK ::"
     $AgentCheckVerboseTypeString = ":: AGENT CHECK ::"
+    $timeVerboseString = ":: TIME ::"
 
     Write-Host "`n----------------------------------------------------------------------------------------------
     `n TeamsAACQTools - Ash Ward - Nasstar
@@ -1583,7 +1585,7 @@ Function Import-NasAA {
 
         Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Starting Auto Attendant object build: $($aa.AutoAttendantName)"
 
-        $DefaultTargetCallQueue,$DefaultTargetCallQueueRA = $null
+        $DefaultTargetCallQueue,$DefaultTargetCallQueueRA,$DefaultActionTargetUri = $null
 
         Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Checking DefaultTargetCallQueue on Auto Attendant: $($aa.AutoAttendantName)"
         if($aa.DefaultActionTargetQueue){
@@ -1608,6 +1610,13 @@ Function Import-NasAA {
 
         $AABusinessHours = $AABHoursExcelImport.where({$_.BusinessHoursID -eq $aa.BusinessHoursID})
 
+        if(!([string]::isnullorempty($aa.DefaultActionTargetUri))){
+            Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Setting the DefaultActionTargetUri to $($aa.DefaultActionTargetUri)"
+            $DefaultActionTargetUri = $aa.DefaultActionTargetUri
+        }else{
+            $DefaultActionTargetUri = $null
+        }
+
         $AAObj = [NasAA]::new()
 
         #Create the Auto Attendant objects from the Excel data input
@@ -1615,6 +1624,7 @@ Function Import-NasAA {
         $AAObj.Name = $aa.AutoAttendantName
         $AAObj.DefaultAction = $aa.DefaultAction
         $AAObj.DefaultTargetCallQueue = $DefaultTargetCallQueue
+        $AAObj.DefaultActionTargetUri = $DefaultActionTargetUri
         $AAObj.DefaultActionTextToSpeech = $aa.DefaultActionTextToSpeech
         $AAObj.NonBusinessHoursActionTextToSpeechPrompt = $aa.NonBusinessHoursActionTextToSpeechPrompt
         $AAObj.NonBusinessHoursAction = $aa.NonBusinessHoursAction
@@ -1796,18 +1806,18 @@ function New-NasTeamsAutoAttendant {
 
     # Configuration Variables
     if($AutoAttendant.LanguageID){
-        Write-Verbose "Setting LanguageID to : $($AutoAttendant.LanguageID)"
+        Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Setting LanguageID to : $($AutoAttendant.LanguageID)"
         $aaLanguage = $AutoAttendant.LanguageID
     }else{
-        Write-Verbose "No LanguageID found, setting default en-GB."
+        Write-Verbose "$InfoStringPrefix $AAVerboseTypeString No LanguageID found, setting default en-GB."
         $aaLanguage = "en-GB"
     }
 
     if($AutoAttendant.TimeZone){
-        Write-Verbose "Setting TimeZone to : $($AutoAttendant.TimeZone)"
+        Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Setting TimeZone to : $($AutoAttendant.TimeZone)"
         $aaTimezone = $AutoAttendant.TimeZone
     }else{
-        Write-Verbose "No TimeZone found, setting default GMT Standard Time."
+        Write-Verbose "$InfoStringPrefix $AAVerboseTypeString No TimeZone found, setting default GMT Standard Time."
         $aaTimezone = "GMT Standard Time"
     }
 
@@ -1815,7 +1825,7 @@ function New-NasTeamsAutoAttendant {
     if(!([string]::IsNullOrEmpty($AutoAttendant.DefaultActionTextToSpeech))){
         $greetingText = $AutoAttendant.DefaultActionTextToSpeech
         $defaultGreetingPrompt = New-CsAutoAttendantPrompt -TextToSpeechPrompt $greetingText -ActiveType TextToSpeech 
-        Write-verbose "$InfoStringPrefix $AAVerboseTypeString Greeting text set to: $greetingText"
+        Write-verbose "$InfoStringPrefix $AAVerboseTypeString Greeting text set to: ""$greetingText"""
     }else{
         $defaultGreetingPrompt = New-CsAutoAttendantprompt -TextToSpeechPrompt "No Prompt Required" -ActiveType None
         Write-Verbose "$InfoStringPrefix $AAVerboseTypeString No greeting text specified."
@@ -1825,93 +1835,100 @@ function New-NasTeamsAutoAttendant {
     if(!([string]::IsNullOrEmpty($AutoAttendant.NonBusinessHoursActionTextToSpeechPrompt))){
         $afterHoursText = $AutoAttendant.NonBusinessHoursActionTextToSpeechPrompt
         $afterHoursGreetingPrompt = New-CsAutoAttendantPrompt -TextToSpeechPrompt $afterHoursText -ActiveType TextToSpeech
-        Write-verbose "$InfoStringPrefix $AAVerboseTypeString After hours greeting text set to: $afterHoursText"
+        Write-verbose "$InfoStringPrefix $AAVerboseTypeString After hours greeting text set to: ""$afterHoursText"""
     }else{
         $afterHoursGreetingPrompt = New-CsAutoAttendantprompt -TextToSpeechPrompt "No Prompt Required" -ActiveType None
         Write-Verbose "$InfoStringPrefix $AAVerboseTypeString No after hours greeting text"
     }
 
-    ## Set the default target to the call queue
-    if(!([string]::IsNullOrEmpty($AutoAttendant.DefaultTargetCallQueue))){
-        $targetCQID = $AutoAttendant.DefaultTargetCallQueue
-        $targetCQ = New-CsAutoAttendantCallableEntity -Identity $targetCQID -Type applicationendpoint
-        $menuOption = New-CsAutoAttendantMenuOption -Action TransferCallToTarget -CallTarget $targetCQ -DtmfResponse Automatic
-        Write-verbose "$InfoStringPrefix $AAVerboseTypeString Target set to $targetCQID"
-    }else{
-        $targetCQID = $null
-        $menuOption = New-CsAutoAttendantMenuOption -Action DisconnectCall -DtmfResponse Automatic
-        Write-Verbose "$InfoStringPrefix $AAVerboseTypeString No target, setting menu option to disconnect"
-    }
-
     ## Default action target
-    if($AutoAttendant.DefaultAction -ne "Disconnect"){
-        Write-Verbose "$InfoStringPrefix $AAVerboseTypeString DefaultAction not set to Disconnect and therefore setting the new DefaultAction"
-        Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Checking if DefaultAction: $($AutoAttendant.DefaultActionTargetUri) is a phone number"
-        if($AutoAttendant.DefaultActionTargetUri -like "tel:*" -or $AutoAttendant.DefaultActionTargetUri -like "+*"){
-            Write-Verbose "$InfoStringPrefix $AAVerboseTypeString DefaultActionTargetUri: $($AutoAttendant.DefaultActionTargetUri) is a phone number, setting the value"
-            $defaultTarget = New-CsAutoAttendantCallableEntity -Identity $AutoAttendant.DefaultActionTargetUri -Type ExternalPstn
-            $defaultMenuOption = New-CsAutoAttendantMenuOption -Action TransferCallToTarget -CallTarget $defaultTarget -DtmfResponse Automatic
-        }else{
-            Write-Verbose "$InfoStringPrefix $AAVerboseTypeString DefaultActionTargetUri: $($AutoAttendant.DefaultActionTargetUri) is not a phone number"
-            if($AutoAttendant.DefaultActionTargetUri -like "sip:*"){
-                Write-Verbose "$InfoStringPrefix $AAVerboseTypeString DefaultActionTargetUri: $($AutoAttendant.DefaultActionTargetUri) is a sip address"
-                Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Stripping sip: from the DefaultActionTargetUri $($AutoAttendant.DefaultActionTargetUri) to grab objectID"
-                $defaultTargetCheck = $AutoAttendant.DefaultActionTargetUri.substring(4)
-            }else{
-                if($AutoAttendant.DefaultActionTargetUri -like "*@*.*"){
-                    Write-Verbose "$InfoStringPrefix $AAVerboseTypeString DefaultActionTargetUri is not prefixed with sip: or tel:, but is a valid email address/upn"
-                    $defaultTargetCheck = $AutoAttendant.DefaultActionTargetUri
-                }
-            }
-            Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Checking if DefaultActionTargetUri: $($AutoAttendant.DefaultActionTargetUri) exists."
-
-            if(($defaultTargetCheck | Get-NASObjectGuid).objguid.guid){
-                $defaultTargetGuid = ($defaultTargetCheck | Get-NASObjectGuid).objguid.guid
-
-                $userobject = $null
-                $userobject = Get-CsOnlineUser $defaultTargetGuid
-
-                $defaultTargetUserType = $null
-
-                if($userobject.OwnerUrn -eq $null){
-                    if($userobject.Department -like "*Common Area*" -or $userobject.Department -like "*CAP*"){
-                        $defaultTargetUserType = "Common Area Phone"
+    if(([string]::IsNullOrEmpty($AutoAttendant.DefaultTargetCallQueue))){
+        if($AutoAttendant.DefaultAction -ne "Disconnect"){
+            if(!([string]::IsNullOrEmpty($AutoAttendant.DefaultActionTargetUri))){
+                Write-Verbose "$InfoStringPrefix $AAVerboseTypeString DefaultAction not set to Disconnect and therefore setting the new DefaultAction"
+                Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Checking if DefaultAction: $($AutoAttendant.DefaultActionTargetUri) is a phone number"
+                if($AutoAttendant.DefaultActionTargetUri -like "tel:*" -or $AutoAttendant.DefaultActionTargetUri -like "+*"){
+                    Write-Verbose "$InfoStringPrefix $AAVerboseTypeString DefaultActionTargetUri: $($AutoAttendant.DefaultActionTargetUri) is a phone number, setting the value"
+                    $defaultTarget = New-CsAutoAttendantCallableEntity -Identity $AutoAttendant.DefaultActionTargetUri -Type ExternalPstn
+                    $defaultMenuOption = New-CsAutoAttendantMenuOption -Action TransferCallToTarget -CallTarget $defaultTarget -DtmfResponse Automatic
+                }else{
+                    Write-Verbose "$InfoStringPrefix $AAVerboseTypeString DefaultActionTargetUri: $($AutoAttendant.DefaultActionTargetUri) is not a phone number"
+                    if($AutoAttendant.DefaultActionTargetUri -like "sip:*"){
+                        Write-Verbose "$InfoStringPrefix $AAVerboseTypeString DefaultActionTargetUri: $($AutoAttendant.DefaultActionTargetUri) is a sip address"
+                        Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Stripping sip: from the DefaultActionTargetUri $($AutoAttendant.DefaultActionTargetUri) to grab objectID"
+                        $defaultTargetCheck = $AutoAttendant.DefaultActionTargetUri.substring(4)
                     }else{
-                        $defaultTargetUserType = "User"
+                        if($AutoAttendant.DefaultActionTargetUri -like "*@*.*"){
+                            Write-Verbose "$InfoStringPrefix $AAVerboseTypeString DefaultActionTargetUri is not prefixed with sip: or tel:, but is a valid email address/upn"
+                            $defaultTargetCheck = $AutoAttendant.DefaultActionTargetUri
+                        }
                     }
-                }elseif($userobject.OwnerUrn -eq 'urn:trustedonlineplatformapplication:11cd3e2e-fccb-42ad-ad00-878b93575e07') {
-                    $defaultTargetUserType = "Call Queue"
-                }elseif($userobject.OwnerUrn -eq 'urn:trustedonlineplatformapplication:ce933385-9390-45d1-9512-c8d228074e07') {
-                    $defaultTargetUserType = "Auto Attendant"
-                }elseif($userobject.OwnerUrn -eq 'urn:device:roomsystem'){
-                    $defaultTargetUserType = "Microsoft Teams Room"
-                }else{
-                    $defaultTargetUserType = $userobject.OwnerUrn
-                }
-
-                Write-Verbose "The default target user type is $defaultTargetUserType"
-                if($defaultTargetUserType -eq "User"){
-                    Write-Verbose "Default Target User Type is $defaultTargetUserType"
-                    Write-Verbose "$InfoStringPrefix $AAVerboseTypeString DefaultActionTargetUri is valid, setting to: $defaultTargetGuid"
-                    $defaultTarget = New-CsAutoAttendantCallableEntity -Identity $defaultTargetGuid -Type User
-                    $defaultMenuOption = New-CsAutoAttendantMenuOption -Action TransferCallToTarget -CallTarget $defaultTarget -DtmfResponse Automatic
-                }elseif($defaultTargetUserType -eq "Call Queue" -or $defaultTargetUserType -eq "Auto Attendant"){
-                    Write-Verbose "Default Target User Type is $defaultTargetUserType"
-                    Write-Verbose "$InfoStringPrefix $AAVerboseTypeString DefaultActionTargetUri is valid, setting to: $defaultTargetGuid"
-                    $defaultTarget = New-CsAutoAttendantCallableEntity -Identity $defaultTargetGuid -Type ApplicationEndpoint
-                    $defaultMenuOption = New-CsAutoAttendantMenuOption -Action TransferCallToTarget -CallTarget $defaultTarget -DtmfResponse Automatic
-                }else{
-                    Write-Error "Default Target User Type not determined, skipping setting default target"
+                    Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Checking if DefaultActionTargetUri: $($AutoAttendant.DefaultActionTargetUri) exists."
+        
+                    if(($defaultTargetCheck | Get-NASObjectGuid).objguid.guid){
+                        $defaultTargetGuid = ($defaultTargetCheck | Get-NASObjectGuid).objguid.guid
+        
+                        $userobject = $null
+                        $userobject = Get-CsOnlineUser $defaultTargetGuid
+        
+                        $defaultTargetUserType = $null
+        
+                        if($userobject.OwnerUrn -eq $null){
+                            if($userobject.Department -like "*Common Area*" -or $userobject.Department -like "*CAP*"){
+                                $defaultTargetUserType = "Common Area Phone"
+                            }else{
+                                $defaultTargetUserType = "User"
+                            }
+                        }elseif($userobject.OwnerUrn -eq 'urn:trustedonlineplatformapplication:11cd3e2e-fccb-42ad-ad00-878b93575e07') {
+                            $defaultTargetUserType = "Call Queue"
+                        }elseif($userobject.OwnerUrn -eq 'urn:trustedonlineplatformapplication:ce933385-9390-45d1-9512-c8d228074e07') {
+                            $defaultTargetUserType = "Auto Attendant"
+                        }elseif($userobject.OwnerUrn -eq 'urn:device:roomsystem'){
+                            $defaultTargetUserType = "Microsoft Teams Room"
+                        }else{
+                            $defaultTargetUserType = $userobject.OwnerUrn
+                        }
+        
+                        Write-Verbose "$InfoStringPrefix $AAVerboseTypeString The default target user type is $defaultTargetUserType"
+                        if($defaultTargetUserType -eq "User"){
+                            Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Default Target User Type is $defaultTargetUserType"
+                            Write-Verbose "$InfoStringPrefix $AAVerboseTypeString DefaultActionTargetUri is valid, setting to: $defaultTargetGuid"
+                            $defaultTarget = New-CsAutoAttendantCallableEntity -Identity $defaultTargetGuid -Type User
+                            $defaultMenuOption = New-CsAutoAttendantMenuOption -Action TransferCallToTarget -CallTarget $defaultTarget -DtmfResponse Automatic
+                        }elseif($defaultTargetUserType -eq "Call Queue" -or $defaultTargetUserType -eq "Auto Attendant"){
+                            Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Default Target User Type is $defaultTargetUserType"
+                            Write-Verbose "$InfoStringPrefix $AAVerboseTypeString DefaultActionTargetUri is valid, setting to: $defaultTargetGuid"
+                            $defaultTarget = New-CsAutoAttendantCallableEntity -Identity $defaultTargetGuid -Type ApplicationEndpoint
+                            $defaultMenuOption = New-CsAutoAttendantMenuOption -Action TransferCallToTarget -CallTarget $defaultTarget -DtmfResponse Automatic
+                        }else{
+                            Write-Error "$ErrorStringPrefix $AAVerboseTypeString Default Target User Type not determined, skipping setting default target"
+                        }
+                    }else{
+                        Write-Error "$ErrorStringPrefix $AAVerboseTypeString DefaultActionTargetUri: $afterHoursTargetCheck doesn't exist/cannot find GUID."
+                        Write-Verbose "$InfoStringPrefix $AAVerboseTypeString As target cannot be found, set the Default menu option to Disconnect."
+                        $defaultMenuOption = New-CsAutoAttendantMenuOption -Action DisconnectCall -DtmfResponse Automatic
+                    }
                 }
             }else{
-                Write-Error "$ErrorStringPrefix $AAVerboseTypeString DefaultActionTargetUri: $afterHoursTargetCheck doesn't exist/cannot find GUID."
-                Write-Verbose "$InfoStringPrefix $AAVerboseTypeString As target cannot be found, set the Default menu option to Disconnect."
+                Write-Verbose "$InfoStringPrefix $AAVerboseTypeString DefaultActionTargetUri is null or empty, setting the Default menu option to Disconnect."
                 $defaultMenuOption = New-CsAutoAttendantMenuOption -Action DisconnectCall -DtmfResponse Automatic
             }
+        }else{
+            Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Default action set to Disconnect, setting default menu option to Disconnect."
+            $defaultMenuOption = New-CsAutoAttendantMenuOption -Action DisconnectCall -DtmfResponse Automatic
         }
     }else{
-        Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Default action set to Disconnect, setting default menu option to Disconnect."
-        $defaultMenuOption = New-CsAutoAttendantMenuOption -Action DisconnectCall -DtmfResponse Automatic
+        Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Default target call queue already configured: $($AutoAttendant.DefaultTargetCallQueue)"
+        $defaultTarget = New-CsAutoAttendantCallableEntity -Identity $AutoAttendant.DefaultTargetCallQueue -Type ApplicationEndpoint
+        $defaultMenuOption = New-CsAutoAttendantMenuOption -Action TransferCallToTarget -CallTarget $defaultTarget -DtmfResponse Automatic
+    }
+    
+    if(($defaultGreetingPrompt).TextToSpeechPrompt -eq "No Prompt Required"){
+        $defaultMenu = New-CsAutoAttendantMenu -Name "Default Menu" -MenuOptions @($defaultMenuOption)
+        $defaultCallFlow = New-CsAutoAttendantCallFlow -Name "Default call flow" -Menu $defaultMenu
+    }else{
+        $defaultMenu = New-CsAutoAttendantMenu -Name "Default Menu" -MenuOptions @($defaultMenuOption)
+        $defaultCallFlow = New-CsAutoAttendantCallFlow -Name "Default call flow" -Menu $defaultMenu -Greetings @($defaultGreetingPrompt)
     }
 
     #Null out the previous timespan objects
@@ -1922,309 +1939,309 @@ function New-NasTeamsAutoAttendant {
     #Build out the timespan objects as the New-CsOnlineTimeRange cmdlet requires this
     if($AutoAttendant.BusinessHours.MonOpen -and $AutoAttendant.BusinessHours.MonClose){
         $MonOpenTimeToConvert = [datetime]$AutoAttendant.BusinessHours.MonOpen
-        Write-Verbose "[TIME] :: Imported time for $($AutoAttendant.BusinessHours.MonOpen): $MonOpenTimeToConvert"
+        Write-Verbose "$InfoStringPrefix $timeVerboseString Imported time for $($AutoAttendant.BusinessHours.MonOpen): $MonOpenTimeToConvert"
         $MonCloseTimeToConvert = [datetime]$AutoAttendant.BusinessHours.MonClose
-        Write-Verbose "[TIME] :: Imported time for $($AutoAttendant.BusinessHours.MonClose): $MonCloseTimeToConvert"
+        Write-Verbose "$InfoStringPrefix $timeVerboseString Imported time for $($AutoAttendant.BusinessHours.MonClose): $MonCloseTimeToConvert"
 
         if(!(($MonOpenTimeToConvert.minute % 15) -eq 0)){
-            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.MonOpen) :: Rounding minutes up to nearest 15"
+            Write-Verbose "$InfoStringPrefix $timeVerboseString $($AutoAttendant.BusinessHours.MonOpen) :: Rounding minutes up to nearest 15"
             $MonOpenTimeConvert15 = $MonOpenTimeToConvert.addminutes(-($MonOpenTimeToConvert.minute % 15) + 15)
-            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.MonOpen) :: Time is now $MonOpenTimeConvert15"
+            Write-Verbose "$InfoStringPrefix $timeVerboseString $($AutoAttendant.BusinessHours.MonOpen) :: Time is now $MonOpenTimeConvert15"
             $MonOpenTimeSpan = $MonOpenTimeConvert15.TimeOfDay
         }else{
             $MonOpenTimeSpan = $MonOpenTimeToConvert.TimeOfDay
-            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.MonOpen) :: $MonOpenTimeToConvert :: Minutes in time already a multiple of 15"
+            Write-Verbose "$InfoStringPrefix $timeVerboseString $($AutoAttendant.BusinessHours.MonOpen) :: $MonOpenTimeToConvert :: Minutes in time already a multiple of 15"
         }
 
         if(!(($MonCloseTimeToConvert.minute % 15) -eq 0)){
-            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.MonClose) :: Rounding minutes up to nearest 15"
+            Write-Verbose "$InfoStringPrefix $timeVerboseString $($AutoAttendant.BusinessHours.MonClose) :: Rounding minutes up to nearest 15"
             $MonCloseTimeConvert15 = $MonCloseTimeToConvert.addminutes(-($MonCloseTimeToConvert.minute % 15) + 15)
-            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.MonClose) :: Time is now $MonCloseTimeConvert15"
+            Write-Verbose "$InfoStringPrefix $timeVerboseString $($AutoAttendant.BusinessHours.MonClose) :: Time is now $MonCloseTimeConvert15"
             $MonCloseTimeSpan = $MonCloseTimeConvert15.TimeOfDay
         }else{
             $MonCloseTimeSpan = $MonCloseTimeToConvert.TimeOfDay
-            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.MonClose) :: $MonCloseTimeToConvert :: Minutes in time already a multiple of 15"
+            Write-Verbose "$InfoStringPrefix $timeVerboseString $($AutoAttendant.BusinessHours.MonClose) :: $MonCloseTimeToConvert :: Minutes in time already a multiple of 15"
         }
 
-        Write-Verbose "Setting Monday business hours: $MonOpenTimeSpan - $MonCloseTimeSpan"
+        Write-Verbose "$InfoStringPrefix $timeVerboseString Setting Monday business hours: $MonOpenTimeSpan - $MonCloseTimeSpan"
 
         #Create midnight var to convert for 24 hours
         $MidnightVar = [datetime]("00:00")
 
         if($MonCloseTimeSpan -eq $MidnightVar.TimeOfDay){
-            Write-verbose "Close time is midnight, therefore converting for 24 hours"
+            Write-verbose "$InfoStringPrefix $timeVerboseString Close time is midnight, therefore converting for 24 hours"
             $AutoAttendantMonTimeRange = New-CsOnlineTimeRange -Start $MonOpenTimeSpan -End 1.00:00
         }else{
-            Write-verbose "Setting time range: $MonOpenTimeSpan - $MonCloseTimeSpan"
+            Write-verbose "$InfoStringPrefix $timeVerboseString Setting time range: $MonOpenTimeSpan - $MonCloseTimeSpan"
             $AutoAttendantMonTimeRange = New-CsOnlineTimeRange -Start $MonOpenTimeSpan -End $MonCloseTimeSpan
         }
 
     }else{
-        Write-Verbose "No business hours specified, therefore assuming $($AutoAttendant.Name) is closed on Monday."
+        Write-Verbose "$InfoStringPrefix $timeVerboseString No business hours specified, therefore assuming $($AutoAttendant.Name) is closed on Monday."
         $AutoAttendantMonTimeRange = $null
     }
 
     if($AutoAttendant.BusinessHours.TueOpen -and $AutoAttendant.BusinessHours.TueClose){
         $TueOpenTimeToConvert = [datetime]$AutoAttendant.BusinessHours.TueOpen
-        Write-Verbose "[TIME] :: Imported time for $($AutoAttendant.BusinessHours.TueOpen): $TueOpenTimeToConvert"
+        Write-Verbose "$InfoStringPrefix $timeVerboseString Imported time for $($AutoAttendant.BusinessHours.TueOpen): $TueOpenTimeToConvert"
         $TueCloseTimeToConvert = [datetime]$AutoAttendant.BusinessHours.TueClose
-        Write-Verbose "[TIME] :: Imported time for $($AutoAttendant.BusinessHours.TueClose): $TueCloseTimeToConvert"
+        Write-Verbose "$InfoStringPrefix $timeVerboseString Imported time for $($AutoAttendant.BusinessHours.TueClose): $TueCloseTimeToConvert"
     
         if(!(($TueOpenTimeToConvert.minute % 15) -eq 0)){
-            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.TueOpen) :: Rounding minutes up to nearest 15"
+            Write-Verbose "$InfoStringPrefix $timeVerboseString $($AutoAttendant.BusinessHours.TueOpen) :: Rounding minutes up to nearest 15"
             $TueOpenTimeConvert15 = $TueOpenTimeToConvert.addminutes(-($TueOpenTimeToConvert.minute % 15) + 15)
-            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.TueOpen) :: Time is now $TueOpenTimeConvert15"
+            Write-Verbose "$InfoStringPrefix $timeVerboseString $($AutoAttendant.BusinessHours.TueOpen) :: Time is now $TueOpenTimeConvert15"
             $TueOpenTimeSpan = $TueOpenTimeConvert15.TimeOfDay
         }else{
             $TueOpenTimeSpan = $TueOpenTimeToConvert.TimeOfDay
-            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.TueOpen) :: $TueOpenTimeToConvert :: Minutes in time already a multiple of 15"
+            Write-Verbose "$InfoStringPrefix $timeVerboseString $($AutoAttendant.BusinessHours.TueOpen) :: $TueOpenTimeToConvert :: Minutes in time already a multiple of 15"
         }
     
         if(!(($TueCloseTimeToConvert.minute % 15) -eq 0)){
-            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.TueClose) :: Rounding minutes up to nearest 15"
+            Write-Verbose "$InfoStringPrefix $timeVerboseString $($AutoAttendant.BusinessHours.TueClose) :: Rounding minutes up to nearest 15"
             $TueCloseTimeConvert15 = $TueCloseTimeToConvert.addminutes(-($TueCloseTimeToConvert.minute % 15) + 15)
-            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.TueClose) :: Time is now $TueCloseTimeConvert15"
+            Write-Verbose "$InfoStringPrefix $timeVerboseString $($AutoAttendant.BusinessHours.TueClose) :: Time is now $TueCloseTimeConvert15"
             $TueCloseTimeSpan = $TueCloseTimeConvert15.TimeOfDay
         }else{
             $TueCloseTimeSpan = $TueCloseTimeToConvert.TimeOfDay
-            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.TueClose) :: $TueCloseTimeToConvert :: Minutes in time already a multiple of 15"
+            Write-Verbose "$InfoStringPrefix $timeVerboseString $($AutoAttendant.BusinessHours.TueClose) :: $TueCloseTimeToConvert :: Minutes in time already a multiple of 15"
         }
     
-        Write-Verbose "Setting Tuesday business hours: $TueOpenTimeSpan - $TueCloseTimeSpan"
+        Write-Verbose "$InfoStringPrefix $timeVerboseString Setting Tuesday business hours: $TueOpenTimeSpan - $TueCloseTimeSpan"
     
         #Create midnight var to convert for 24 hours
         $MidnightVar = [datetime]("00:00")
     
         if($TueCloseTimeSpan -eq $MidnightVar.TimeOfDay){
-            Write-verbose "Close time is midnight, therefore converting for 24 hours"
+            Write-verbose "$InfoStringPrefix $timeVerboseString Close time is midnight, therefore converting for 24 hours"
             $AutoAttendantTueTimeRange = New-CsOnlineTimeRange -Start $TueOpenTimeSpan -End 1.00:00
         }else{
-            Write-verbose "Setting time range: $TueOpenTimeSpan - $TueCloseTimeSpan"
+            Write-verbose "$InfoStringPrefix $timeVerboseString Setting time range: $TueOpenTimeSpan - $TueCloseTimeSpan"
             $AutoAttendantTueTimeRange = New-CsOnlineTimeRange -Start $TueOpenTimeSpan -End $TueCloseTimeSpan
         }
     
     }else{
-        Write-Verbose "No business hours specified, therefore assuming $($AutoAttendant.Name) is closed on Tuesday."
+        Write-Verbose "$InfoStringPrefix $timeVerboseString No business hours specified, therefore assuming $($AutoAttendant.Name) is closed on Tuesday."
         $AutoAttendantTueTimeRange = $null
     }
 
     if($AutoAttendant.BusinessHours.WedsOpen -and $AutoAttendant.BusinessHours.WedsClose){
         $WedsOpenTimeToConvert = [datetime]$AutoAttendant.BusinessHours.WedsOpen
-        Write-Verbose "[TIME] :: Imported time for $($AutoAttendant.BusinessHours.WedsOpen): $WedsOpenTimeToConvert"
+        Write-Verbose "$InfoStringPrefix $timeVerboseString Imported time for $($AutoAttendant.BusinessHours.WedsOpen): $WedsOpenTimeToConvert"
         $WedsCloseTimeToConvert = [datetime]$AutoAttendant.BusinessHours.WedsClose
-        Write-Verbose "[TIME] :: Imported time for $($AutoAttendant.BusinessHours.WedsClose): $WedsCloseTimeToConvert"
+        Write-Verbose "$InfoStringPrefix $timeVerboseString Imported time for $($AutoAttendant.BusinessHours.WedsClose): $WedsCloseTimeToConvert"
     
         if(!(($WedsOpenTimeToConvert.minute % 15) -eq 0)){
-            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.WedsOpen) :: Rounding minutes up to nearest 15"
+            Write-Verbose "$InfoStringPrefix $timeVerboseString $($AutoAttendant.BusinessHours.WedsOpen) :: Rounding minutes up to nearest 15"
             $WedsOpenTimeConvert15 = $WedsOpenTimeToConvert.addminutes(-($WedsOpenTimeToConvert.minute % 15) + 15)
-            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.WedsOpen) :: Time is now $WedsOpenTimeConvert15"
+            Write-Verbose "$InfoStringPrefix $timeVerboseString $($AutoAttendant.BusinessHours.WedsOpen) :: Time is now $WedsOpenTimeConvert15"
             $WedsOpenTimeSpan = $WedsOpenTimeConvert15.TimeOfDay
         }else{
             $WedsOpenTimeSpan = $WedsOpenTimeToConvert.TimeOfDay
-            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.WedsOpen) :: $WedsOpenTimeToConvert :: Minutes in time already a multiple of 15"
+            Write-Verbose "$InfoStringPrefix $timeVerboseString $($AutoAttendant.BusinessHours.WedsOpen) :: $WedsOpenTimeToConvert :: Minutes in time already a multiple of 15"
         }
     
         if(!(($WedsCloseTimeToConvert.minute % 15) -eq 0)){
-            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.WedsClose) :: Rounding minutes up to nearest 15"
+            Write-Verbose "$InfoStringPrefix $timeVerboseString $($AutoAttendant.BusinessHours.WedsClose) :: Rounding minutes up to nearest 15"
             $WedsCloseTimeConvert15 = $WedsCloseTimeToConvert.addminutes(-($WedsCloseTimeToConvert.minute % 15) + 15)
-            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.WedsClose) :: Time is now $WedsCloseTimeConvert15"
+            Write-Verbose "$InfoStringPrefix $timeVerboseString $($AutoAttendant.BusinessHours.WedsClose) :: Time is now $WedsCloseTimeConvert15"
             $WedsCloseTimeSpan = $WedsCloseTimeConvert15.TimeOfDay
         }else{
             $WedsCloseTimeSpan = $WedsCloseTimeToConvert.TimeOfDay
-            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.WedsClose) :: $WedsCloseTimeToConvert :: Minutes in time already a multiple of 15"
+            Write-Verbose "$InfoStringPrefix $timeVerboseString $($AutoAttendant.BusinessHours.WedsClose) :: $WedsCloseTimeToConvert :: Minutes in time already a multiple of 15"
         }
     
-        Write-Verbose "Setting Wednesday business hours: $WedsOpenTimeSpan - $WedsCloseTimeSpan"
+        Write-Verbose "$InfoStringPrefix $timeVerboseString Setting Wednesday business hours: $WedsOpenTimeSpan - $WedsCloseTimeSpan"
     
         #Create midnight var to convert for 24 hours
         $MidnightVar = [datetime]("00:00")
     
         if($WedsCloseTimeSpan -eq $MidnightVar.TimeOfDay){
-            Write-verbose "Close time is midnight, therefore converting for 24 hours"
+            Write-verbose "$InfoStringPrefix $timeVerboseString Close time is midnight, therefore converting for 24 hours"
             $AutoAttendantWedsTimeRange = New-CsOnlineTimeRange -Start $WedsOpenTimeSpan -End 1.00:00
         }else{
-            Write-verbose "Setting time range: $WedsOpenTimeSpan - $WedsCloseTimeSpan"
+            Write-verbose "$InfoStringPrefix $timeVerboseString Setting time range: $WedsOpenTimeSpan - $WedsCloseTimeSpan"
             $AutoAttendantWedsTimeRange = New-CsOnlineTimeRange -Start $WedsOpenTimeSpan -End $WedsCloseTimeSpan
         }
     
     }else{
-        Write-Verbose "No business hours specified, therefore assuming $($AutoAttendant.Name) is closed on Wednesday."
+        Write-Verbose "$InfoStringPrefix $timeVerboseString No business hours specified, therefore assuming $($AutoAttendant.Name) is closed on Wednesday."
         $AutoAttendantWedsTimeRange = $null
     }
 
     if($AutoAttendant.BusinessHours.ThursOpen -and $AutoAttendant.BusinessHours.ThursClose){
         $ThursOpenTimeToConvert = [datetime]$AutoAttendant.BusinessHours.ThursOpen
-        Write-Verbose "[TIME] :: Imported time for $($AutoAttendant.BusinessHours.ThursOpen): $ThursOpenTimeToConvert"
+        Write-Verbose "$InfoStringPrefix $timeVerboseString Imported time for $($AutoAttendant.BusinessHours.ThursOpen): $ThursOpenTimeToConvert"
         $ThursCloseTimeToConvert = [datetime]$AutoAttendant.BusinessHours.ThursClose
-        Write-Verbose "[TIME] :: Imported time for $($AutoAttendant.BusinessHours.ThursClose): $ThursCloseTimeToConvert"
+        Write-Verbose "$InfoStringPrefix $timeVerboseString Imported time for $($AutoAttendant.BusinessHours.ThursClose): $ThursCloseTimeToConvert"
     
         if(!(($ThursOpenTimeToConvert.minute % 15) -eq 0)){
-            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.ThursOpen) :: Rounding minutes up to nearest 15"
+            Write-Verbose "$InfoStringPrefix $timeVerboseString $($AutoAttendant.BusinessHours.ThursOpen) :: Rounding minutes up to nearest 15"
             $ThursOpenTimeConvert15 = $ThursOpenTimeToConvert.addminutes(-($ThursOpenTimeToConvert.minute % 15) + 15)
-            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.ThursOpen) :: Time is now $ThursOpenTimeConvert15"
+            Write-Verbose "$InfoStringPrefix $timeVerboseString $($AutoAttendant.BusinessHours.ThursOpen) :: Time is now $ThursOpenTimeConvert15"
             $ThursOpenTimeSpan = $ThursOpenTimeConvert15.TimeOfDay
         }else{
             $ThursOpenTimeSpan = $ThursOpenTimeToConvert.TimeOfDay
-            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.ThursOpen) :: $ThursOpenTimeToConvert :: Minutes in time already a multiple of 15"
+            Write-Verbose "$InfoStringPrefix $timeVerboseString $($AutoAttendant.BusinessHours.ThursOpen) :: $ThursOpenTimeToConvert :: Minutes in time already a multiple of 15"
         }
     
         if(!(($ThursCloseTimeToConvert.minute % 15) -eq 0)){
-            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.ThursClose) :: Rounding minutes up to nearest 15"
+            Write-Verbose "$InfoStringPrefix $timeVerboseString $($AutoAttendant.BusinessHours.ThursClose) :: Rounding minutes up to nearest 15"
             $ThursCloseTimeConvert15 = $ThursCloseTimeToConvert.addminutes(-($ThursCloseTimeToConvert.minute % 15) + 15)
-            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.ThursClose) :: Time is now $ThursCloseTimeConvert15"
+            Write-Verbose "$InfoStringPrefix $timeVerboseString $($AutoAttendant.BusinessHours.ThursClose) :: Time is now $ThursCloseTimeConvert15"
             $ThursCloseTimeSpan = $ThursCloseTimeConvert15.TimeOfDay
         }else{
             $ThursCloseTimeSpan = $ThursCloseTimeToConvert.TimeOfDay
-            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.ThursClose) :: $ThursCloseTimeToConvert :: Minutes in time already a multiple of 15"
+            Write-Verbose "$InfoStringPrefix $timeVerboseString $($AutoAttendant.BusinessHours.ThursClose) :: $ThursCloseTimeToConvert :: Minutes in time already a multiple of 15"
         }
     
-        Write-Verbose "Setting Thursday business hours: $ThursOpenTimeSpan - $ThursCloseTimeSpan"
+        Write-Verbose "$InfoStringPrefix $timeVerboseString Setting Thursday business hours: $ThursOpenTimeSpan - $ThursCloseTimeSpan"
     
         #Create midnight var to convert for 24 hours
         $MidnightVar = [datetime]("00:00")
     
         if($ThursCloseTimeSpan -eq $MidnightVar.TimeOfDay){
-            Write-verbose "Close time is midnight, therefore converting for 24 hours"
+            Write-verbose "$InfoStringPrefix $timeVerboseString Close time is midnight, therefore converting for 24 hours"
             $AutoAttendantThursTimeRange = New-CsOnlineTimeRange -Start $ThursOpenTimeSpan -End 1.00:00
         }else{
-            Write-verbose "Setting time range: $ThursOpenTimeSpan - $ThursCloseTimeSpan"
+            Write-verbose "$InfoStringPrefix $timeVerboseString Setting time range: $ThursOpenTimeSpan - $ThursCloseTimeSpan"
             $AutoAttendantThursTimeRange = New-CsOnlineTimeRange -Start $ThursOpenTimeSpan -End $ThursCloseTimeSpan
         }
     
     }else{
-        Write-Verbose "No business hours specified, therefore assuming $($AutoAttendant.Name) is closed on Thursday."
+        Write-Verbose "$InfoStringPrefix $timeVerboseString No business hours specified, therefore assuming $($AutoAttendant.Name) is closed on Thursday."
         $AutoAttendantThursTimeRange = $null
     }
 
     if($AutoAttendant.BusinessHours.FriOpen -and $AutoAttendant.BusinessHours.FriClose){
         $FriOpenTimeToConvert = [datetime]$AutoAttendant.BusinessHours.FriOpen
-        Write-Verbose "[TIME] :: Imported time for $($AutoAttendant.BusinessHours.FriOpen): $FriOpenTimeToConvert"
+        Write-Verbose "$InfoStringPrefix $timeVerboseString Imported time for $($AutoAttendant.BusinessHours.FriOpen): $FriOpenTimeToConvert"
         $FriCloseTimeToConvert = [datetime]$AutoAttendant.BusinessHours.FriClose
-        Write-Verbose "[TIME] :: Imported time for $($AutoAttendant.BusinessHours.FriClose): $FriCloseTimeToConvert"
+        Write-Verbose "$InfoStringPrefix $timeVerboseString Imported time for $($AutoAttendant.BusinessHours.FriClose): $FriCloseTimeToConvert"
     
         if(!(($FriOpenTimeToConvert.minute % 15) -eq 0)){
-            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.FriOpen) :: Rounding minutes up to nearest 15"
+            Write-Verbose "$InfoStringPrefix $timeVerboseString $($AutoAttendant.BusinessHours.FriOpen) :: Rounding minutes up to nearest 15"
             $FriOpenTimeConvert15 = $FriOpenTimeToConvert.addminutes(-($FriOpenTimeToConvert.minute % 15) + 15)
-            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.FriOpen) :: Time is now $FriOpenTimeConvert15"
+            Write-Verbose "$InfoStringPrefix $timeVerboseString $($AutoAttendant.BusinessHours.FriOpen) :: Time is now $FriOpenTimeConvert15"
             $FriOpenTimeSpan = $FriOpenTimeConvert15.TimeOfDay
         }else{
             $FriOpenTimeSpan = $FriOpenTimeToConvert.TimeOfDay
-            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.FriOpen) :: $FriOpenTimeToConvert :: Minutes in time already a multiple of 15"
+            Write-Verbose "$InfoStringPrefix $timeVerboseString $($AutoAttendant.BusinessHours.FriOpen) :: $FriOpenTimeToConvert :: Minutes in time already a multiple of 15"
         }
     
         if(!(($FriCloseTimeToConvert.minute % 15) -eq 0)){
-            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.FriClose) :: Rounding minutes up to nearest 15"
+            Write-Verbose "$InfoStringPrefix $timeVerboseString $($AutoAttendant.BusinessHours.FriClose) :: Rounding minutes up to nearest 15"
             $FriCloseTimeConvert15 = $FriCloseTimeToConvert.addminutes(-($FriCloseTimeToConvert.minute % 15) + 15)
-            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.FriClose) :: Time is now $FriCloseTimeConvert15"
+            Write-Verbose "$InfoStringPrefix $timeVerboseString $($AutoAttendant.BusinessHours.FriClose) :: Time is now $FriCloseTimeConvert15"
             $FriCloseTimeSpan = $FriCloseTimeConvert15.TimeOfDay
         }else{
             $FriCloseTimeSpan = $FriCloseTimeToConvert.TimeOfDay
-            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.FriClose) :: $FriCloseTimeToConvert :: Minutes in time already a multiple of 15"
+            Write-Verbose "$InfoStringPrefix $timeVerboseString $($AutoAttendant.BusinessHours.FriClose) :: $FriCloseTimeToConvert :: Minutes in time already a multiple of 15"
         }
     
-        Write-Verbose "Setting Friday business hours: $FriOpenTimeSpan - $FriCloseTimeSpan"
+        Write-Verbose "$InfoStringPrefix $timeVerboseString Setting Friday business hours: $FriOpenTimeSpan - $FriCloseTimeSpan"
     
         #Create midnight var to convert for 24 hours
         $MidnightVar = [datetime]("00:00")
     
         if($FriCloseTimeSpan -eq $MidnightVar.TimeOfDay){
-            Write-verbose "Close time is midnight, therefore converting for 24 hours"
+            Write-verbose "$InfoStringPrefix $timeVerboseString Close time is midnight, therefore converting for 24 hours"
             $AutoAttendantFriTimeRange = New-CsOnlineTimeRange -Start $FriOpenTimeSpan -End 1.00:00
         }else{
-            Write-verbose "Setting time range: $FriOpenTimeSpan - $FriCloseTimeSpan"
+            Write-verbose "$InfoStringPrefix $timeVerboseString Setting time range: $FriOpenTimeSpan - $FriCloseTimeSpan"
             $AutoAttendantFriTimeRange = New-CsOnlineTimeRange -Start $FriOpenTimeSpan -End $FriCloseTimeSpan
         }
     
     }else{
-        Write-Verbose "No business hours specified, therefore assuming $($AutoAttendant.Name) is closed on Friday."
+        Write-Verbose "$InfoStringPrefix $timeVerboseString No business hours specified, therefore assuming $($AutoAttendant.Name) is closed on Friday."
         $AutoAttendantFriTimeRange = $null
     }
 
     if($AutoAttendant.BusinessHours.SatOpen -and $AutoAttendant.BusinessHours.SatClose){
         $SatOpenTimeToConvert = [datetime]$AutoAttendant.BusinessHours.SatOpen
-        Write-Verbose "[TIME] :: Imported time for $($AutoAttendant.BusinessHours.SatOpen): $SatOpenTimeToConvert"
+        Write-Verbose "$InfoStringPrefix $timeVerboseString Imported time for $($AutoAttendant.BusinessHours.SatOpen): $SatOpenTimeToConvert"
         $SatCloseTimeToConvert = [datetime]$AutoAttendant.BusinessHours.SatClose
-        Write-Verbose "[TIME] :: Imported time for $($AutoAttendant.BusinessHours.SatClose): $SatCloseTimeToConvert"
+        Write-Verbose "$InfoStringPrefix $timeVerboseString Imported time for $($AutoAttendant.BusinessHours.SatClose): $SatCloseTimeToConvert"
     
         if(!(($SatOpenTimeToConvert.minute % 15) -eq 0)){
-            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.SatOpen) :: Rounding minutes up to nearest 15"
+            Write-Verbose "$InfoStringPrefix $timeVerboseString $($AutoAttendant.BusinessHours.SatOpen) :: Rounding minutes up to nearest 15"
             $SatOpenTimeConvert15 = $SatOpenTimeToConvert.addminutes(-($SatOpenTimeToConvert.minute % 15) + 15)
-            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.SatOpen) :: Time is now $SatOpenTimeConvert15"
+            Write-Verbose "$InfoStringPrefix $timeVerboseString $($AutoAttendant.BusinessHours.SatOpen) :: Time is now $SatOpenTimeConvert15"
             $SatOpenTimeSpan = $SatOpenTimeConvert15.TimeOfDay
         }else{
             $SatOpenTimeSpan = $SatOpenTimeToConvert.TimeOfDay
-            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.SatOpen) :: $SatOpenTimeToConvert :: Minutes in time already a multiple of 15"
+            Write-Verbose "$InfoStringPrefix $timeVerboseString $($AutoAttendant.BusinessHours.SatOpen) :: $SatOpenTimeToConvert :: Minutes in time already a multiple of 15"
         }
     
         if(!(($SatCloseTimeToConvert.minute % 15) -eq 0)){
-            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.SatClose) :: Rounding minutes up to nearest 15"
+            Write-Verbose "$InfoStringPrefix $timeVerboseString $($AutoAttendant.BusinessHours.SatClose) :: Rounding minutes up to nearest 15"
             $SatCloseTimeConvert15 = $SatCloseTimeToConvert.addminutes(-($SatCloseTimeToConvert.minute % 15) + 15)
-            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.SatClose) :: Time is now $SatCloseTimeConvert15"
+            Write-Verbose "$InfoStringPrefix $timeVerboseString $($AutoAttendant.BusinessHours.SatClose) :: Time is now $SatCloseTimeConvert15"
             $SatCloseTimeSpan = $SatCloseTimeConvert15.TimeOfDay
         }else{
             $SatCloseTimeSpan = $SatCloseTimeToConvert.TimeOfDay
-            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.SatClose) :: $SatCloseTimeToConvert :: Minutes in time already a multiple of 15"
+            Write-Verbose "$InfoStringPrefix $timeVerboseString $($AutoAttendant.BusinessHours.SatClose) :: $SatCloseTimeToConvert :: Minutes in time already a multiple of 15"
         }
     
-        Write-Verbose "Setting Saturday business hours: $SatOpenTimeSpan - $SatCloseTimeSpan"
+        Write-Verbose "$InfoStringPrefix $timeVerboseString Setting Saturday business hours: $SatOpenTimeSpan - $SatCloseTimeSpan"
     
         #Create midnight var to convert for 24 hours
         $MidnightVar = [datetime]("00:00")
     
         if($SatCloseTimeSpan -eq $MidnightVar.TimeOfDay){
-            Write-verbose "Close time is midnight, therefore converting for 24 hours"
+            Write-verbose "$InfoStringPrefix $timeVerboseString Close time is midnight, therefore converting for 24 hours"
             $AutoAttendantSatTimeRange = New-CsOnlineTimeRange -Start $SatOpenTimeSpan -End 1.00:00
         }else{
-            Write-verbose "Setting time range: $SatOpenTimeSpan - $SatCloseTimeSpan"
+            Write-verbose "$InfoStringPrefix $timeVerboseString Setting time range: $SatOpenTimeSpan - $SatCloseTimeSpan"
             $AutoAttendantSatTimeRange = New-CsOnlineTimeRange -Start $SatOpenTimeSpan -End $SatCloseTimeSpan
         }
     
     }else{
-        Write-Verbose "No business hours specified, therefore assuming $($AutoAttendant.Name) is closed on Saturday."
+        Write-Verbose "$InfoStringPrefix $timeVerboseString No business hours specified, therefore assuming $($AutoAttendant.Name) is closed on Saturday."
         $AutoAttendantSatTimeRange = $null
     }
 
     if($AutoAttendant.BusinessHours.SunOpen -and $AutoAttendant.BusinessHours.SunClose){
         $SunOpenTimeToConvert = [datetime]$AutoAttendant.BusinessHours.SunOpen
-        Write-Verbose "[TIME] :: Imported time for $($AutoAttendant.BusinessHours.SunOpen): $SunOpenTimeToConvert"
+        Write-Verbose "$InfoStringPrefix $timeVerboseString Imported time for $($AutoAttendant.BusinessHours.SunOpen): $SunOpenTimeToConvert"
         $SunCloseTimeToConvert = [datetime]$AutoAttendant.BusinessHours.SunClose
-        Write-Verbose "[TIME] :: Imported time for $($AutoAttendant.BusinessHours.SunClose): $SunCloseTimeToConvert"
+        Write-Verbose "$InfoStringPrefix $timeVerboseString Imported time for $($AutoAttendant.BusinessHours.SunClose): $SunCloseTimeToConvert"
     
         if(!(($SunOpenTimeToConvert.minute % 15) -eq 0)){
-            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.SunOpen) :: Rounding minutes up to nearest 15"
+            Write-Verbose "$InfoStringPrefix $timeVerboseString $($AutoAttendant.BusinessHours.SunOpen) :: Rounding minutes up to nearest 15"
             $SunOpenTimeConvert15 = $SunOpenTimeToConvert.addminutes(-($SunOpenTimeToConvert.minute % 15) + 15)
-            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.SunOpen) :: Time is now $SunOpenTimeConvert15"
+            Write-Verbose "$InfoStringPrefix $timeVerboseString $($AutoAttendant.BusinessHours.SunOpen) :: Time is now $SunOpenTimeConvert15"
             $SunOpenTimeSpan = $SunOpenTimeConvert15.TimeOfDay
         }else{
             $SunOpenTimeSpan = $SunOpenTimeToConvert.TimeOfDay
-            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.SunOpen) :: $SunOpenTimeToConvert :: Minutes in time already a multiple of 15"
+            Write-Verbose "$InfoStringPrefix $timeVerboseString $($AutoAttendant.BusinessHours.SunOpen) :: $SunOpenTimeToConvert :: Minutes in time already a multiple of 15"
         }
     
         if(!(($SunCloseTimeToConvert.minute % 15) -eq 0)){
-            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.SunClose) :: Rounding minutes up to nearest 15"
+            Write-Verbose "$InfoStringPrefix $timeVerboseString $($AutoAttendant.BusinessHours.SunClose) :: Rounding minutes up to nearest 15"
             $SunCloseTimeConvert15 = $SunCloseTimeToConvert.addminutes(-($SunCloseTimeToConvert.minute % 15) + 15)
-            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.SunClose) :: Time is now $SunCloseTimeConvert15"
+            Write-Verbose "$InfoStringPrefix $timeVerboseString $($AutoAttendant.BusinessHours.SunClose) :: Time is now $SunCloseTimeConvert15"
             $SunCloseTimeSpan = $SunCloseTimeConvert15.TimeOfDay
         }else{
             $SunCloseTimeSpan = $SunCloseTimeToConvert.TimeOfDay
-            Write-Verbose "[TIME] :: $($AutoAttendant.BusinessHours.SunClose) :: $SunCloseTimeToConvert :: Minutes in time already a multiple of 15"
+            Write-Verbose "$InfoStringPrefix $timeVerboseString $($AutoAttendant.BusinessHours.SunClose) :: $SunCloseTimeToConvert :: Minutes in time already a multiple of 15"
         }
     
-        Write-Verbose "Setting Sunday business hours: $SunOpenTimeSpan - $SunCloseTimeSpan"
+        Write-Verbose "$InfoStringPrefix $timeVerboseString Setting Sunday business hours: $SunOpenTimeSpan - $SunCloseTimeSpan"
     
         #Create midnight var to convert for 24 hours
         $MidnightVar = [datetime]("00:00")
     
         if($SunCloseTimeSpan -eq $MidnightVar.TimeOfDay){
-            Write-verbose "Close time is midnight, therefore converting for 24 hours"
+            Write-verbose "$InfoStringPrefix $timeVerboseString Close time is midnight, therefore converting for 24 hours"
             $AutoAttendantSunTimeRange = New-CsOnlineTimeRange -Start $SunOpenTimeSpan -End 1.00:00
         }else{
-            Write-verbose "Setting time range: $SunOpenTimeSpan - $SunCloseTimeSpan"
+            Write-verbose "$InfoStringPrefix $timeVerboseString Setting time range: $SunOpenTimeSpan - $SunCloseTimeSpan"
             $AutoAttendantSunTimeRange = New-CsOnlineTimeRange -Start $SunOpenTimeSpan -End $SunCloseTimeSpan
         }
     
     }else{
-        Write-Verbose "No business hours specified, therefore assuming $($AutoAttendant.Name) is closed on Sunday."
+        Write-Verbose "$InfoStringPrefix $timeVerboseString No business hours specified, therefore assuming $($AutoAttendant.Name) is closed on Sunday."
         $AutoAttendantSunTimeRange = $null
     }
 
@@ -2232,7 +2249,7 @@ function New-NasTeamsAutoAttendant {
     if(([string]::IsNullOrEmpty($AutoAttendantMonTimeRange) -and [string]::IsNullOrEmpty($AutoAttendantTueTimeRange) -and [string]::IsNullOrEmpty($AutoAttendantWedsTimeRange)`
     -and [string]::IsNullOrEmpty($AutoAttendantThursTimeRange) -and [string]::IsNullOrEmpty($AutoAttendantFriTimeRange) -and [string]::IsNullOrEmpty($AutoAttendantSatTimeRange)`
     -and [string]::IsNullOrEmpty($AutoAttendantSunTimeRange))){
-        Write-Verbose "No business hours specified, therefore assuming $($AutoAttendant.Name) is open 24/7."
+        Write-Verbose "$InfoStringPrefix $timeVerboseString No business hours specified for all days, therefore assuming $($AutoAttendant.Name) is open 24/7."
         $AutoAttendantMonTimeRange = New-CsOnlineTimeRange -Start 00:00 -End 1.00:00
         $AutoAttendantTueTimeRange = New-CsOnlineTimeRange -Start 00:00 -End 1.00:00
         $AutoAttendantWedsTimeRange = New-CsOnlineTimeRange -Start 00:00 -End 1.00:00
@@ -2252,7 +2269,7 @@ function New-NasTeamsAutoAttendant {
             SundayHours = $AutoAttendantSunTimeRange
         }
     }else{
-        Write-Verbose "Configuring specified business hours for: $($AutoAttendant.Name)"
+        Write-Verbose "$InfoStringPrefix $timeVerboseString Configuring specified business hours for: $($AutoAttendant.Name)"
         $BusinessHoursParameters = @{
             Name = "After Hours"
             MondayHours = $AutoAttendantMonTimeRange
@@ -2267,15 +2284,7 @@ function New-NasTeamsAutoAttendant {
 
     # Create the online schedule from above configuration
     $AutoAttendantBusinessHours = New-CsOnlineSchedule @BusinessHoursParameters -WeeklyRecurrentSchedule -Complement
-    Write-Verbose "Business hours configured for: $($AutoAttendant.Name)"
-
-    #Basic call flow
-    $defaultMenu = New-CsAutoAttendantMenu -Name "Default Menu" -MenuOptions @($menuOption)
-    if(($defaultGreetingPrompt).TextToSpeechPrompt -eq "No Prompt Required"){
-        $defaultCallFlow = New-CsAutoAttendantCallFlow -Name "Default call flow" -Menu $defaultMenu
-    }else{
-        $defaultCallFlow = New-CsAutoAttendantCallFlow -Name "Default call flow" -Menu $defaultMenu -Greetings @($defaultGreetingPrompt)
-    }
+    Write-Verbose "$InfoStringPrefix $timeVerboseString Business hours configured for: $($AutoAttendant.Name)"
 
     ## Non business hours action target
     if($AutoAttendant.NonBusinessHoursAction -ne "Disconnect"){
@@ -2323,19 +2332,19 @@ function New-NasTeamsAutoAttendant {
                     $afterHoursTargetUserType = $userobject.OwnerUrn
                 }
 
-                Write-Verbose "The after hours target user type is $afterHoursTargetUserType"
+                Write-Verbose "$InfoStringPrefix $AAVerboseTypeString The after hours target user type is $afterHoursTargetUserType"
                 if($afterHoursTargetUserType -eq "User"){
-                    Write-Verbose "After hours Target User Type is $afterHoursTargetUserType"
+                    Write-Verbose "$InfoStringPrefix $AAVerboseTypeString After hours Target User Type is $afterHoursTargetUserType"
                     Write-Verbose "$InfoStringPrefix $AAVerboseTypeString NonBusinessHoursActionUri is valid, setting to: $afterHoursTargetGuid"
                     $afterHoursTarget = New-CsAutoAttendantCallableEntity -Identity $afterHoursTargetGuid -Type User
                     $afterHoursMenuOption = New-CsAutoAttendantMenuOption -Action TransferCallToTarget -CallTarget $afterHoursTarget -DtmfResponse Automatic
                 }elseif($afterHoursTargetUserType -eq "Call Queue" -or $afterHoursTargetUserType -eq "Auto Attendant"){
-                    Write-Verbose "After hours User Type is $afterHoursTargetUserType"
+                    Write-Verbose "$InfoStringPrefix $AAVerboseTypeString After hours User Type is $afterHoursTargetUserType"
                     Write-Verbose "$InfoStringPrefix $AAVerboseTypeString NonBusinessHoursActionUri is valid, setting to: $afterHoursTargetGuid"
                     $afterHoursTarget = New-CsAutoAttendantCallableEntity -Identity $afterHoursTargetGuid -Type ApplicationEndpoint
                     $afterHoursMenuOption = New-CsAutoAttendantMenuOption -Action TransferCallToTarget -CallTarget $afterHoursTarget -DtmfResponse Automatic
                 }else{
-                    Write-Error "After hours Target User Type not determined, skipping setting default target"
+                    Write-Error "$InfoStringPrefix $AAVerboseTypeString After hours Target User Type not determined, skipping setting default target"
                 }
             }else{
                 Write-Error "$ErrorStringPrefix $AAVerboseTypeString NonBusinessHoursActionUri: $afterHoursTargetCheck doesn't exist/cannot find GUID."
@@ -2930,12 +2939,14 @@ function New-NasTeamsCallQueue {
     }
 
     #Only specify custom MusicOnHold if it exists in the data
-    if((-not [string]::IsNullOrEmpty($CallQueue.MusicOnHoldAudioFilePath)) -and ($CallQueue.UseDefaultMusicOnHold -eq "N")){
-        Write-Verbose "Setting custom music on hold"
-        Write-verbose "Music on hold file path: $($CallQueue.MusicOnHoldAudioFilePath)"
-        Write-Verbose "Setting use default music on hold to: $($CallQueue.UseDefaultMusicOnHold)"
-        $NewCQParameters.MusicOnHoldAudioFileId = $MusicOnHoldAudioFileId
-        $NewCQParameters.UseDefaultMusicOnHold = $False
+    if($PathTest){
+        if((-not [string]::IsNullOrEmpty($CallQueue.MusicOnHoldAudioFilePath)) -and ($CallQueue.UseDefaultMusicOnHold -eq "N")){
+            Write-Verbose "Setting custom music on hold"
+            Write-verbose "Music on hold file path: $($CallQueue.MusicOnHoldAudioFilePath)"
+            Write-Verbose "Setting use default music on hold to: $($CallQueue.UseDefaultMusicOnHold)"
+            $NewCQParameters.MusicOnHoldAudioFileId = $MusicOnHoldAudioFileId
+            $NewCQParameters.UseDefaultMusicOnHold = $False
+        }
     }else{
         Write-Verbose "Setting Default music on hold: True"
         $NewCQParameters.UseDefaultMusicOnHold = $True
@@ -3137,35 +3148,47 @@ function New-NasTeamsResourceAccount {
             $i = $null 
         }
 
-        Write-Verbose "Checking if the resource account $RAAccountUPN exists"
+        Write-Verbose "$InfoStringPrefix $RATypeAccountString Checking if the resource account $RAAccountUPN exists"
         $NewRA = Get-CsOnlineApplicationInstance -Identity $RAAccountUPN -ErrorAction SilentlyContinue
         if(!($NewRA)){
                 Write-Verbose "$InfoStringPrefix $RATypeAccountString $RAAccountUPN - Account doesn't exist, moving to creation."
-                Write-Verbose "Resource Account display name: ""$DisplayName"""
+                Write-Verbose "$InfoStringPrefix $RATypeAccountString Resource Account display name: ""$DisplayName"""
                 # Create resource account of call queue type
                 $RAParameters = @{
                     UserPrincipalName = $RAAccountUPN
                     ApplicationId = $AppID
                     DisplayName = "$DisplayName"
                 }
-                $NewRA = New-CsOnlineApplicationInstance @RAParameters
-                Write-Verbose "$InfoStringPrefix $RATypeAccountString $RAAccountUPN - Account has now been created."
-                Write-Host "Resource Account: ""$RAAccountUPN""..." -NoNewline
-                Write-Host " CREATED" -ForegroundColor Green
+
+                #Lets try create the resource account
+                try{
+                    $NewRA = New-CsOnlineApplicationInstance @RAParameters -ErrorAction Stop -WarningAction SilentlyContinue
+                }catch{
+                    Write-Error "$ErrorStringPrefix $RATypeAccountString Error creating resource account $RAAccountUPN"
+                }
+
+                if($NewRA){
+                    Write-Verbose "$InfoStringPrefix $RATypeAccountString $RAAccountUPN - Account has now been created."
+                    Write-Host "Resource Account: ""$RAAccountUPN""..." -NoNewline
+                    Write-Host " CREATED" -ForegroundColor Green
+                }else{
+                    Write-Verbose "$InfoStringPrefix $RATypeAccountString $RAAccountUPN - Account creation will be retried..."
+                    $NewRA = New-CsOnlineApplicationInstance @RAParameters -ErrorAction Stop -WarningAction SilentlyContinue
+                }
 
                 #Write-Verbose "$InfoStringPrefix $RATypeAccountString $($RAAccountUPN) - Account is available for use, moving to call queue checks."
                 if($CallQueue){
                     $CallQueue.ResourceAccount += $NewRA.objectID
                 }else{
                     #$CallQueue.ResourceAccount = $null
-                    Write-Verbose "Resource account is not a call queue, checking if it's an auto attendant."
+                    Write-Verbose "$InfoStringPrefix $RATypeAccountString Resource account is not a call queue, checking if it's an auto attendant."
                 }
 
                 if($AutoAttendant){
                     $AutoAttendant.ResourceAccount += $NewRA.objectID
                 }else{
                     #$AutoAttendant.ResourceAccount = $null
-                    Write-Verbose "Resource account is not an auto attendant."
+                    Write-Verbose "$InfoStringPrefix $RATypeAccountString Resource account is not an auto attendant."
                 }
 
         #The Resource Account exists, skip to creating the call queue    
