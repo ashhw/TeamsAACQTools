@@ -161,6 +161,9 @@ class NasAA {
     [string]$DefaultActionTextToSpeech
     [string]$DefaultActionTargetUri
 
+    # [OPTIONAL] Specify the Welcome Music Audio File
+    [string]$DefaultActionAudioFilePath
+
     # Nom business hours action
     [ValidateSet('Disconnect','Forward','Voicemail','SharedVoicemail')]
     [string]$NonBusinessHoursAction = 'Disconnect'
@@ -1632,6 +1635,7 @@ Function Import-NasAA {
         $AAObj.LanguageID = $aa.LanguageID
         $AAObj.TimeZone = $aa.TimeZone
         $AAObj.BusinessHours = $AABusinessHours
+        $AAObj.DefaultActionAudioFilePath = $aa.DefaultActionAudioFilePath
         #Only populate the phone number if it exists otherwise it causes an error
         #if($x.PhoneNumber){
         #
@@ -1802,7 +1806,56 @@ function New-NasTeamsAutoAttendant {
 
     #Null the vars
     $aaLanguage,$aaTimezone,$targetCQID,$targetCQ,$menuOption,$greetingText,$afterHoursText,`
-    $defaultCallFlow,$defaultMenu,$afterHoursTarget,$afterHoursMenuOption,$afterHoursTargetGuid,$afterHoursTargetCheck = $null
+    $defaultCallFlow,$defaultMenu,$afterHoursTarget,$afterHoursMenuOption,$afterHoursTargetGuid,$afterHoursTargetCheck,$rootPath = $null
+
+    #Path used for music based on excel file location
+    $rootPath = $AAData | Split-Path -Parent
+
+    ## Audio file checks and uploads
+    #Check if the WelcomeMusic has been specified in the data.
+    if($AutoAttendant.DefaultActionAudioFilePath){
+        Write-Verbose "$InfoStringPrefix $AAVerboseTypeString $($AutoAttendant.Name) :: Default action audio file found, checking path $rootPath$($AutoAttendant.DefaultActionAudioFilePath) exists."
+        # Test the path, ensure it can be reached
+        try {
+            $PathTest = Test-Path -Path $rootPath$($AutoAttendant.DefaultActionAudioFilePath) -ErrorAction Stop
+        }
+        catch {
+            throw "$errorStringPrefix $AAVerboseTypeString $($AutoAttendant.Name) :: Path error: $rootPath$($AutoAttendant.DefaultActionAudioFilePath) not found/unreachable."
+        }
+
+        # Path returns true, therefore import and upload the file
+        if($PathTest){
+            #Generate random filename for audio file
+            #$DefaultActionMusicFilename = "DefaultActionMusic" + $AutoAttendant.Name + (Get-Random -Minimum 1 -Maximum 1000) + ".mp3"
+            $DefaultActionMusicFilename = "DAM-$(Get-Random -Minimum 1 -Maximum 1000).mp3"
+
+            #Lets create duplicate file
+            #Build the filename path
+            $ParentPath = "$rootPath$($AutoAttendant.DefaultActionAudioFilePath)" | Split-Path -Parent
+            $DefaultActionMusicCopyFilename = "$ParentPath\$DefaultActionMusicFilename"
+            Copy-Item -Path "$rootPath$($AutoAttendant.DefaultActionAudioFilePath)" -Destination $DefaultActionMusicCopyFilename
+
+            Write-Verbose "$($DefaultActionMusicCopyFilename)"
+
+            #Get the audio file from the path
+            $DefaultActionMusicAudioFileContent = Get-Content -Path $DefaultActionMusicCopyFilename -AsByteStream -ReadCount 0
+            Write-Verbose "$InfoStringPrefix $AAVerboseTypeString $($AutoAttendant.Name) :: Path exists: Default Action audio file $rootPath$($AutoAttendant.DefaultActionAudioFilePath)"
+            Write-Verbose "$InfoStringPrefix $AAVerboseTypeString $($AutoAttendant.Name) :: Default action audio file $rootPath$($AutoAttendant.DefaultActionAudioFilePath) imported."
+
+            # Import the audio file into Teams
+            $DefaultActionMusicAudioFile = Import-CsOnlineAudioFile -ApplicationId "HuntGroup" -FileName $DefaultActionMusicFilename -Content $DefaultActionMusicAudioFileContent  
+
+            # Grab the ID - Required for the call queue
+            $DefaultActionMusicAudioFileID = $DefaultActionMusicAudioFile.id
+
+            Write-Verbose "Removing audio file copy: $DefaultActionMusicCopyFilename"
+            Remove-Item -Path $DefaultActionMusicCopyFilename
+
+            Write-Verbose "$InfoStringPrefix $AAVerboseTypeString $($AutoAttendant.Name) :: Default action audio file uploaded to Teams. ID: $($DefaultActionMusicAudioFileID)"
+        } else {
+            Write-Error "$errorStringPrefix $AAVerboseTypeString $($AutoAttendant.Name) :: Default action music file path $rootPath$($AutoAttendant.DefaultActionAudioFilePath) unreachable."
+        }
+    }
 
     # Configuration Variables
     if($AutoAttendant.LanguageID){
@@ -1821,14 +1874,30 @@ function New-NasTeamsAutoAttendant {
         $aaTimezone = "GMT Standard Time"
     }
 
+    #Only specify default action audio file if it exists in the data
+    if($AutoAttendant.DefaultActionAudioFilePath){
+        Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Setting Default Action Music Audio File Path to: $($AutoAttendant.DefaultActionAudioFilePath)"
+        $defaultGreetingPrompt = New-CsAutoAttendantPrompt -AudioFilePrompt $DefaultActionMusicAudioFile -ActiveType AudioFile 
+        Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Default action music file set to: ""$($AutoAttendant.DefaultActionAudioFilePath)"""
+    }else{
+        Write-Verbose "$InfoStringPrefix $AAVerboseTypeString No default action music file found, skipping this step."
+    }
+
     ## Greeting text prompt
     if(!([string]::IsNullOrEmpty($AutoAttendant.DefaultActionTextToSpeech))){
-        $greetingText = $AutoAttendant.DefaultActionTextToSpeech
-        $defaultGreetingPrompt = New-CsAutoAttendantPrompt -TextToSpeechPrompt $greetingText -ActiveType TextToSpeech 
-        Write-verbose "$InfoStringPrefix $AAVerboseTypeString Greeting text set to: ""$greetingText"""
+        if($defaultGreetingPrompt.AudioFilePrompt){
+            Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Text greeting and audio greeting both specified in memory, defaulting to audio greeting."
+            $defaultGreetingPrompt = New-CsAutoAttendantPrompt -AudioFilePrompt $DefaultActionMusicAudioFile -ActiveType AudioFile
+        }else{
+            $greetingText = $AutoAttendant.DefaultActionTextToSpeech
+            $defaultGreetingPrompt = New-CsAutoAttendantPrompt -TextToSpeechPrompt $greetingText -ActiveType TextToSpeech 
+            Write-verbose "$InfoStringPrefix $AAVerboseTypeString Greeting text set to: ""$greetingText"""
+        }
     }else{
-        $defaultGreetingPrompt = New-CsAutoAttendantprompt -TextToSpeechPrompt "No Prompt Required" -ActiveType None
-        Write-Verbose "$InfoStringPrefix $AAVerboseTypeString No greeting text specified."
+        if(!($defaultGreetingPrompt.AudioFilePrompt)){
+            $defaultGreetingPrompt = New-CsAutoAttendantprompt -TextToSpeechPrompt "No Prompt Required" -ActiveType None
+            Write-Verbose "$InfoStringPrefix $AAVerboseTypeString No greeting text specified."
+        }
     }
 
     ## After hours text prompt
