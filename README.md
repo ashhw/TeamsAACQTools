@@ -27,6 +27,7 @@ NOTE: You can also specify the -InstallModules switch to provide an interactive 
 - Fixed greetings error this was due to the object type
 - Changed identities to identity for resource account (MSFT change)
 - Added more fields to the Excel export
+- Added logging (specify the log folder)
 ## What this won't do (yet!)
 **Auto Attendants**  
 - Holidays/Holiday Actions
@@ -106,6 +107,8 @@ Specify the ffmpeg.exe path for the audio file conversion to .mp3.
 **-SkipAudio [OPTIONAL]**  
 Specify this to skip the audio conversion as you would like to do this manually or will be using new audio files.
 
+**-logFolder [MANDATORY]**
+Specify the location to output the log transcript to. Made mandatory to ensure the user has the ability to check what happened during the build.
 ## Import-NasCQ
 ### Parameters
 **-CQData**  
@@ -122,6 +125,9 @@ Specify if you wish to exclude resource account creation.
 
 **-NoBackup**  
 Specify if you wish to exclude the backup process. (Useful for Greenfield sites without any existing Call Queues)
+
+**-logFolder [MANDATORY]**
+Specify the location to output the log transcript to. Made mandatory to ensure the user has the ability to check what happened during the build.
 
 ## Import-NasAA
 ### Parameters
@@ -140,3 +146,5 @@ Specify if you wish to exclude resource account creation.
 **-NoBackup**  
 Specify if you wish to exclude the backup process. (Useful for Greenfield sites without any existing Auto Attendants)
 
+**-logFolder [MANDATORY]**
+Specify the location to output the log transcript to. Made mandatory to ensure the user has the ability to check what happened during the build.
