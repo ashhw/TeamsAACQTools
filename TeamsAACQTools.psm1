@@ -172,6 +172,9 @@ class NasAA {
 
     [string]$NonBusinessHoursActionTextToSpeechPrompt
 
+    # [OPTIONAL] Specify the NonBusinessHours Music Audio File
+    [string]$NonBusinessHoursActionAudioFilePath
+
     [string]$BusinessHoursID
     [PSCustomObject]$BusinessHours
 
@@ -328,7 +331,9 @@ function Convert-NasImportMusicFile{
 
     #Grab the workflows that don't default music on hold set to Y
     #Small quirk, some workflows may have 2 queues associated, and therefore two music on hold values, only grab the ones less than 1
-    $NewMusicFolders = $ImportWorkflows.where({$_.UseDefaultMusicOnHold -ne "Y" -and $($_.UseDefaultMusicOnHold).count -le 1})
+    $NewMusicFolders = $ImportWorkflows.where({$_.UseDefaultMusicOnHold -ne "Y" -and $($_.UseDefaultMusicOnHold).count -le 1 -or $_.NonBusinessHoursActionAudioFilePath -like "*audio*" -or $_.DefaultActionAudioFilePath -like "*audio*" })
+
+    #$NewMusicFolders = $ImportWorkflows
 
     # Lets loop through the NewMusicFolders, create the queue folders, convert the files and move them into the correct folder
     ForEach($musicid in $NewMusicFolders){
@@ -351,7 +356,27 @@ function Convert-NasImportMusicFile{
             $OriginalPath = "$rootfolder\RGS\Instances\$($musicid.identity)"
 
             Write-Verbose "Original Path: $OriginalPath"
-            $OriginalFile = Get-ChildItem -Path $OriginalPath -Recurse -Filter "$($musicid.CustomMusicOnHoldFileID).wav"
+
+            ## Need to figure out a way to loop through a workflow if it has multiple audio files
+            ## Example. Workflow 1 has custom music on hold on the queue, default action audio file, and non business hours action audio file.
+
+            if($($musicid.CustomMusicOnHoldFileID)){
+                Write-Verbose "Custom Music On Hold File ID: $($musicid.CustomMusicOnHoldFileID)"
+                $OriginalFile = Get-ChildItem -Path $OriginalPath -Recurse -Filter "$($musicid.CustomMusicOnHoldFileID).wav"
+            }elseif($($musicid.DefaultActionAudioFileID)) {
+                Write-Verbose "Default Action Audio File ID: $($musicid.DefaultActionAudioFileID)"
+                $OriginalFile = Get-ChildItem -Path $OriginalPath -Recurse -Filter "$($musicid.DefaultActionAudioFileID).wav"
+            }elseif($($musicid.NonBusinessHoursActionAudioFileID)){
+                Write-Verbose "Non Business Hours Action Audio File ID: $($musicid.NonBusinessHoursActionAudioFileID)"
+                $OriginalFile = Get-ChildItem -Path $OriginalPath -Recurse -Filter "$($musicid.NonBusinessHoursActionAudioFileID).wav"
+            }else{
+                Write-Verbose "BALLS! :( No audio File ID found"
+            }
+            Write-Verbose "Music on hold file: $($musicid.CustomMusicOnHoldFileID).wav"
+            Write-Verbose "Default action audio file: $($musicid.DefaultActionAudioFileID).wav"
+            Write-Verbose "Non business hours action audio file: $($musicid.NonBusinessHoursActionAudioFileID).wav"
+            #$OriginalFile = Get-ChildItem -Path $OriginalPath -Recurse -Filter "$($musicid.CustomMusicOnHoldFileID).wav"
+            #$OriginalFile = (Get-ChildItem -Path $OriginalPath -Recurse).where({$_.Name -eq "$($musicid.CustomMusicOnHoldFileID).wav" -or $_.Name -eq "$($musicid.DefaultActionAudioFileID).wav" -or $_.Name -eq "$($musicid.NonBusinessHoursActionAudioFileID).wav"})
 
             Write-Verbose "Original File: $OriginalFile"
             # This will be the new file name
@@ -888,11 +913,31 @@ function Import-NasAACQData {
             $defaultActionTextToSpeech = ""
         }
 
-        if($_.NonBusinessHoursAction.Prompt.AudioFilePrompt){
-            $NonBusinessHoursActionAudioFilePrompt = $_.NonBusinessHoursAction.Prompt.AudioFilePrompt
+        $NonBusinessHoursActionfileLocation = ""
+
+        if($_.NonBusinessHoursAction.Prompt.AudioFilePrompt.OriginalFileName){
+            Write-Verbose "TRUE: $($_.NonBusinessHoursAction.Prompt.AudioFilePrompt.OriginalFileName)"
+            Write-Verbose "Importing audio file: $($_.NonBusinessHoursAction.Prompt.AudioFilePrompt.OriginalFileName)"
+            $NonBusinessHoursActionfileLocation = "\audio\{0}\{1}{2}" -f $_.Identity.InstanceId.Guid, $_.NonBusinessHoursAction.Prompt.AudioFilePrompt.UniqueName, $_.NonBusinessHoursAction.Prompt.AudioFilePrompt.OriginalFileName.substring($_.NonBusinessHoursAction.Prompt.AudioFilePrompt.OriginalFileName.lastindexof("."))
         }else{
-            Write-Verbose "No non business hours audio file specified, setting value to null"
-            $NonBusinessHoursActionAudioFilePrompt = ""
+            Write-Verbose "No audio file specified, setting file location to null"
+            $NonBusinessHoursActionfileLocation = ""
+        }
+
+        if($_.NonBusinessHoursAction.Prompt.AudioFilePrompt.UniqueName){
+            Write-Verbose "Audio file specified, setting file id"
+            $NonBusinessHoursActionAudioFileID = $_.NonBusinessHoursAction.Prompt.AudioFilePrompt.UniqueName
+        }else{
+            Write-Verbose "Audio file not specified, setting to null"
+            $NonBusinessHoursActionAudioFileID = ""
+        }
+
+        if($_.NonBusinessHoursAction.Prompt.AudioFilePrompt.OriginalFileName){
+            Write-Verbose "Audio file specified, setting filename"
+            $NonBusinessHoursActionAudioFilename = $_.NonBusinessHoursAction.Prompt.AudioFilePrompt.OriginalFileName
+        }else{
+            Write-Verbose "Audio file not specified, setting filename to null"
+            $NonBusinessHoursActionAudioFilename = ""
         }
 
         if($_.NonBusinessHoursAction.Prompt.TextToSpeechPrompt){
@@ -983,7 +1028,9 @@ function Import-NasAACQData {
             DefaultActionTargetUri = $DefaultActionTargetUri
             DefaultActionQuestions = $DefaultActionQuestion
             NonBusinessHoursAction = if($_.NonBusinessHoursAction.action -like "TransferTo*"){"Forward"}else{"Disconnect"}
-            NonBusinessHoursActionAudioFilePrompt = $NonBusinessHoursActionAudioFilePrompt
+            NonBusinessHoursActionAudioFilename = $NonBusinessHoursActionAudioFilename
+            NonBusinessHoursActionAudioFileID = $NonBusinessHoursActionAudioFileID
+            NonBusinessHoursActionAudioFilePath = $NonBusinessHoursActionfileLocation.replace(".wav",".mp3")
             NonBusinessHoursActionTextToSpeechPrompt = $NonBusinessHoursActionTTSPrompt
             NonBusinessHoursActionQuestion = $NonBusinessHoursActionQuestion
             NonBusinessHoursActionQueueID = $NonBusinessHoursQueueID
@@ -1387,7 +1434,7 @@ function Import-NasAACQData {
     # Export to excel
     Write-Host "Exporting workflows..." -NoNewline
     try{
-        $ImportWorkflows | Sort-Object CleanedName | Export-Excel -Path "$rootFolder\AACQDataImport.xlsx" -WorksheetName "Auto Attendants" -BoldTopRow -AutoSize
+        $ImportWorkflows | Sort-Object CleanedName | Export-Excel -Path "$rootFolder\AACQDataImport.xlsx" -WorksheetName "Auto Attendants" -BoldTopRow -AutoSize -TableStyle Dark1
         Write-Host " SUCCESS" -ForegroundColor Green
     }catch{
         Write-Host " FAILED - Check if the file is open" -ForegroundColor Red
@@ -1397,7 +1444,7 @@ function Import-NasAACQData {
     Write-Host "Exporting queues..." -NoNewline
 
     try{
-        $ImportQueues | Sort-Object CleanedName | Export-Excel -Path "$rootFolder\AACQDataImport.xlsx" -WorksheetName "Call Queues" -BoldTopRow -AutoSize
+        $ImportQueues | Sort-Object CleanedName | Export-Excel -Path "$rootFolder\AACQDataImport.xlsx" -WorksheetName "Call Queues" -BoldTopRow -AutoSize -TableStyle Dark1
         Write-Host " SUCCESS" -ForegroundColor Green
     }catch{
         Write-Host " FAILED - Check if the file is open" -ForegroundColor Red
@@ -1415,7 +1462,7 @@ function Import-NasAACQData {
         @{l="FriOpen";e={$_.FridayHours1.OpenTime.ToString()}},@{l="FriClose";e={$_.FridayHours1.CloseTime.ToString()}},
         @{l="SatOpen";e={$_.SaturdayHours1.OpenTime.ToString()}},@{l="SatClose";e={$_.SaturdayHours1.CloseTime.ToString()}},
         @{l="SunOpen";e={$_.SundayHours1.OpenTime.ToString()}},@{l="SunClose";e={$_.SundayHours1.CloseTime.ToString()}} |
-        Export-Excel -Path "$rootFolder\AACQDataImport.xlsx" -WorksheetName "Business Hours" -NoNumberConversion "Name" -BoldTopRow -AutoSize
+        Export-Excel -Path "$rootFolder\AACQDataImport.xlsx" -WorksheetName "Business Hours" -NoNumberConversion "Name" -BoldTopRow -AutoSize -TableStyle Dark1
         Write-Host " SUCCESS" -ForegroundColor Green
     }catch{
         Write-Host " FAILED - Check if the file is open" -ForegroundColor Red
@@ -1467,14 +1514,17 @@ Function Import-NasAA {
         [switch]$Wireframe,
 
         #No backup, used for a greenfield environment and automation
-        [switch]$NoBackup
+        [switch]$NoBackup,
+
+        #Root folder used for log file purposes
+        [String]$logFolder
     )
 
     #Define Transcript Log Files 
-    #$logfile = (Get-Date).tostring("yyyyMMdd-hhmmss")
-    #$transcriptfile = (New-Item -itemtype File -Path ".\" -Name ($logfile + ".log"))
-    #Start-Transcript -Path $transcriptfile
-    #Write-Host "Transcript logging started $($transcriptfile)"
+    $logfile = (Get-Date).tostring("yyyyMMdd-hhmmss")
+    $transcriptfile = (New-Item -itemtype File -Path "$logfolder" -Name ($logfile + ".log"))
+    Start-Transcript -Path $transcriptfile
+    Write-Host "Transcript logging started $($transcriptfile)"
 
     $errorStringPrefix = "[ERROR]"
     $InfoStringPrefix = "[INFO]"
@@ -1636,6 +1686,7 @@ Function Import-NasAA {
         $AAObj.TimeZone = $aa.TimeZone
         $AAObj.BusinessHours = $AABusinessHours
         $AAObj.DefaultActionAudioFilePath = $aa.DefaultActionAudioFilePath
+        $AAObj.NonBusinessHoursActionAudioFilePath = $aa.NonBusinessHoursActionAudioFilePath
         #Only populate the phone number if it exists otherwise it causes an error
         #if($x.PhoneNumber){
         #
@@ -1693,7 +1744,7 @@ Function Import-NasAA {
         }
     } # End import ForEach($x in $AAExcelImport)
 
-    #Stop-Transcript
+    Stop-Transcript
     Write-Host "Auto Attendant build completed, please refer to the transcript file for any errors."
 }
 function Backup-TeamsAutoAttendants{
@@ -1804,9 +1855,10 @@ function New-NasTeamsAutoAttendant {
     
     Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Configuring Auto Attendant: $($AutoAttendant.Name)"
 
-    #Null the vars
+    #Null the vars each loop
     $aaLanguage,$aaTimezone,$targetCQID,$targetCQ,$menuOption,$greetingText,$afterHoursText,`
-    $defaultCallFlow,$defaultMenu,$afterHoursTarget,$afterHoursMenuOption,$afterHoursTargetGuid,$afterHoursTargetCheck,$rootPath = $null
+    $defaultCallFlow,$defaultMenu,$afterHoursTarget,$afterHoursMenuOption,$afterHoursTargetGuid,$afterHoursTargetCheck,$rootPath,`
+    $defaultActionAudioFileStatus,$nonBusinessHoursActionAudioFileStatus,$PathTest,$ParentPath = $null
 
     #Path used for music based on excel file location
     $rootPath = $AAData | Split-Path -Parent
@@ -1827,7 +1879,7 @@ function New-NasTeamsAutoAttendant {
         if($PathTest){
             #Generate random filename for audio file
             #$DefaultActionMusicFilename = "DefaultActionMusic" + $AutoAttendant.Name + (Get-Random -Minimum 1 -Maximum 1000) + ".mp3"
-            $DefaultActionMusicFilename = "DAM-$(Get-Random -Minimum 1 -Maximum 1000).mp3"
+            $DefaultActionMusicFilename = "aa-open$(Get-Random -Minimum 1 -Maximum 1000).mp3"
 
             #Lets create duplicate file
             #Build the filename path
@@ -1845,15 +1897,59 @@ function New-NasTeamsAutoAttendant {
             # Import the audio file into Teams
             $DefaultActionMusicAudioFile = Import-CsOnlineAudioFile -ApplicationId "HuntGroup" -FileName $DefaultActionMusicFilename -Content $DefaultActionMusicAudioFileContent  
 
-            # Grab the ID - Required for the call queue
-            $DefaultActionMusicAudioFileID = $DefaultActionMusicAudioFile.id
-
             Write-Verbose "Removing audio file copy: $DefaultActionMusicCopyFilename"
             Remove-Item -Path $DefaultActionMusicCopyFilename
 
-            Write-Verbose "$InfoStringPrefix $AAVerboseTypeString $($AutoAttendant.Name) :: Default action audio file uploaded to Teams. ID: $($DefaultActionMusicAudioFileID)"
+            Write-Verbose "$InfoStringPrefix $AAVerboseTypeString $($AutoAttendant.Name) :: Default action audio file uploaded to Teams. ID: $($DefaultActionMusicAudioFile.ID)"
         } else {
+            $defaultActionAudioFileStatus = "Unreachable"
             Write-Error "$errorStringPrefix $AAVerboseTypeString $($AutoAttendant.Name) :: Default action music file path $rootPath$($AutoAttendant.DefaultActionAudioFilePath) unreachable."
+        }
+    }
+
+    $PathTest = $null
+
+    ## Audio file checks and uploads
+    #Check if the audio file for non business hours has been specified in the data.
+    if($AutoAttendant.NonBusinessHoursActionAudioFilePath){
+        Write-Verbose "$InfoStringPrefix $AAVerboseTypeString $($AutoAttendant.Name) :: Non Business Hours Action audio file found, checking path $rootPath$($AutoAttendant.NonBusinessHoursActionAudioFilePath) exists."
+        # Test the path, ensure it can be reached
+        try {
+            $PathTest = Test-Path -Path $rootPath$($AutoAttendant.NonBusinessHoursActionAudioFilePath) -ErrorAction Stop
+        }
+        catch {
+            throw "$errorStringPrefix $AAVerboseTypeString $($AutoAttendant.Name) :: Path error: $rootPath$($AutoAttendant.NonBusinessHoursActionAudioFilePath) not found/unreachable."
+        }
+
+        # Path returns true, therefore import and upload the file
+        if($PathTest){
+            #Generate random filename for audio file
+            #$NonBusinessHoursActionMusicFilename = "NonBusinessHoursActionMusic" + $AutoAttendant.Name + (Get-Random -Minimum 1 -Maximum 1000) + ".mp3"
+            $NonBusinessHoursActionMusicFilename = "aa-closed$(Get-Random -Minimum 1 -Maximum 1000).mp3"
+
+            #Lets create duplicate file
+            #Build the filename path
+            $ParentPath = "$rootPath$($AutoAttendant.NonBusinessHoursActionAudioFilePath)" | Split-Path -Parent
+            $NonBusinessHoursActionMusicCopyFilename = "$ParentPath\$NonBusinessHoursActionMusicFilename"
+            Copy-Item -Path "$rootPath$($AutoAttendant.NonBusinessHoursActionAudioFilePath)" -Destination $NonBusinessHoursActionMusicCopyFilename
+
+            Write-Verbose "$($NonBusinessHoursActionMusicCopyFilename)"
+
+            #Get the audio file from the path
+            $NonBusinessHoursActionMusicAudioFileContent = Get-Content -Path $NonBusinessHoursActionMusicCopyFilename -AsByteStream -ReadCount 0
+            Write-Verbose "$InfoStringPrefix $AAVerboseTypeString $($AutoAttendant.Name) :: Path exists: Non Business Hours Action audio file $rootPath$($AutoAttendant.NonBusinessHoursActionAudioFilePath)"
+            Write-Verbose "$InfoStringPrefix $AAVerboseTypeString $($AutoAttendant.Name) :: Non Business Hours Action audio file $rootPath$($AutoAttendant.NonBusinessHoursActionAudioFilePath) imported."
+
+            # Import the audio file into Teams
+            $NonBusinessHoursActionMusicAudioFile = Import-CsOnlineAudioFile -ApplicationId "HuntGroup" -FileName $NonBusinessHoursActionMusicFilename -Content $NonBusinessHoursActionMusicAudioFileContent  
+
+            Write-Verbose "Removing audio file copy: $NonBusinessHoursActionMusicCopyFilename"
+            Remove-Item -Path $NonBusinessHoursActionMusicCopyFilename
+
+            Write-Verbose "$InfoStringPrefix $AAVerboseTypeString $($AutoAttendant.Name) :: Non Business Hours Action audio file uploaded to Teams. ID: $($NonBusinessHoursActionMusicAudioFile.ID)"
+        } else {
+            $nonBusinessHoursActionAudioFileStatus = "Unreachable"
+            Write-Error "$errorStringPrefix $AAVerboseTypeString $($AutoAttendant.Name) :: Non Business Hours Action music file path $rootPath$($AutoAttendant.NonBusinessHoursActionAudioFilePath) unreachable."
         }
     }
 
@@ -1876,11 +1972,28 @@ function New-NasTeamsAutoAttendant {
 
     #Only specify default action audio file if it exists in the data
     if($AutoAttendant.DefaultActionAudioFilePath){
-        Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Setting Default Action Music Audio File Path to: $($AutoAttendant.DefaultActionAudioFilePath)"
-        $defaultGreetingPrompt = New-CsAutoAttendantPrompt -AudioFilePrompt $DefaultActionMusicAudioFile -ActiveType AudioFile 
-        Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Default action music file set to: ""$($AutoAttendant.DefaultActionAudioFilePath)"""
+        if($defaultActionAudioFileStatus -ne "Unreachable"){
+            Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Setting Default Action Music Audio File Path to: $($AutoAttendant.DefaultActionAudioFilePath)"
+            $defaultGreetingPrompt = New-CsAutoAttendantPrompt -AudioFilePrompt $DefaultActionMusicAudioFile -ActiveType AudioFile 
+            Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Default action music file set to: ""$($AutoAttendant.DefaultActionAudioFilePath)"""
+        }else{
+            Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Default Action Audio file status is unreachable, check the logs for the missing file."
+        }
     }else{
         Write-Verbose "$InfoStringPrefix $AAVerboseTypeString No default action music file found, skipping this step."
+    }
+
+    #Only specify Non Business Hours Action audio file if it exists in the data
+    if($AutoAttendant.NonBusinessHoursActionAudioFilePath){
+        if($nonBusinessHoursActionAudioFileStatus -ne "Unreachable"){
+            Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Setting Non Business Hours Action Music Audio File Path to: $($AutoAttendant.NonBusinessHoursActionAudioFilePath)"
+            $afterHoursGreetingPrompt = New-CsAutoAttendantPrompt -AudioFilePrompt $NonBusinessHoursActionMusicAudioFile -ActiveType AudioFile 
+            Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Non Business Hours Action music file set to: ""$($AutoAttendant.NonBusinessHoursActionAudioFilePath)"""
+        }else{
+            Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Non Business Hours Action Audio file status is unreachable, check the logs for the missing file."
+        }
+    }else{
+        Write-Verbose "$InfoStringPrefix $AAVerboseTypeString No Non Business Hours Action music file found, skipping this step."
     }
 
     ## Greeting text prompt
@@ -1898,16 +2011,6 @@ function New-NasTeamsAutoAttendant {
             $defaultGreetingPrompt = New-CsAutoAttendantprompt -TextToSpeechPrompt "No Prompt Required" -ActiveType None
             Write-Verbose "$InfoStringPrefix $AAVerboseTypeString No greeting text specified."
         }
-    }
-
-    ## After hours text prompt
-    if(!([string]::IsNullOrEmpty($AutoAttendant.NonBusinessHoursActionTextToSpeechPrompt))){
-        $afterHoursText = $AutoAttendant.NonBusinessHoursActionTextToSpeechPrompt
-        $afterHoursGreetingPrompt = New-CsAutoAttendantPrompt -TextToSpeechPrompt $afterHoursText -ActiveType TextToSpeech
-        Write-verbose "$InfoStringPrefix $AAVerboseTypeString After hours greeting text set to: ""$afterHoursText"""
-    }else{
-        $afterHoursGreetingPrompt = New-CsAutoAttendantprompt -TextToSpeechPrompt "No Prompt Required" -ActiveType None
-        Write-Verbose "$InfoStringPrefix $AAVerboseTypeString No after hours greeting text"
     }
 
     ## Default action target
@@ -1998,6 +2101,23 @@ function New-NasTeamsAutoAttendant {
     }else{
         $defaultMenu = New-CsAutoAttendantMenu -Name "Default Menu" -MenuOptions @($defaultMenuOption)
         $defaultCallFlow = New-CsAutoAttendantCallFlow -Name "Default call flow" -Menu $defaultMenu -Greetings @($defaultGreetingPrompt)
+    }
+
+    ## Non business hours prompt
+    if(!([string]::IsNullOrEmpty($AutoAttendant.NonBusinessHoursActionTextToSpeech))){
+        if($afterHoursGreetingPrompt.AudioFilePrompt){
+            Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Text greeting and audio greeting both specified in memory, defaulting to audio greeting."
+            $afterHoursGreetingPrompt = New-CsAutoAttendantPrompt -AudioFilePrompt $NonBusinessHoursActionMusicAudioFile -ActiveType AudioFile
+        }else{
+            $greetingText = $AutoAttendant.NonBusinessHoursActionTextToSpeech
+            $afterHoursGreetingPrompt = New-CsAutoAttendantPrompt -TextToSpeechPrompt $greetingText -ActiveType TextToSpeech 
+            Write-verbose "$InfoStringPrefix $AAVerboseTypeString Greeting text set to: ""$greetingText"""
+        }
+    }else{
+        if(!($afterHoursGreetingPrompt.AudioFilePrompt)){
+            $afterHoursGreetingPrompt = New-CsAutoAttendantprompt -TextToSpeechPrompt "No Prompt Required" -ActiveType None
+            Write-Verbose "$InfoStringPrefix $AAVerboseTypeString No greeting text specified."
+        }
     }
 
     #Null out the previous timespan objects
@@ -2355,75 +2475,86 @@ function New-NasTeamsAutoAttendant {
     $AutoAttendantBusinessHours = New-CsOnlineSchedule @BusinessHoursParameters -WeeklyRecurrentSchedule -Complement
     Write-Verbose "$InfoStringPrefix $timeVerboseString Business hours configured for: $($AutoAttendant.Name)"
 
-    ## Non business hours action target
-    if($AutoAttendant.NonBusinessHoursAction -ne "Disconnect"){
-        Write-Verbose "$InfoStringPrefix $AAVerboseTypeString NonBusinessHoursAction not set to Disconnect and therefore setting the new NonBusinessHoursAction"
-        Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Checking if NonBusinessHoursAction: $($AutoAttendant.NonBusinessHoursActionUri) is a phone number"
-        if($AutoAttendant.NonBusinessHoursActionUri -like "tel:*" -or $AutoAttendant.NonBusinessHoursActionUri -like "+*"){
-            Write-Verbose "$InfoStringPrefix $AAVerboseTypeString NonBusinessHoursActionUri: $($AutoAttendant.NonBusinessHoursActionUri) is a phone number, setting the value"
-            $afterHoursTarget = New-CsAutoAttendantCallableEntity -Identity $AutoAttendant.NonBusinessHoursActionUri -Type ExternalPstn
-            $afterHoursMenuOption = New-CsAutoAttendantMenuOption -Action TransferCallToTarget -CallTarget $afterHoursTarget -DtmfResponse Automatic
-        }else{
-            Write-Verbose "$InfoStringPrefix $AAVerboseTypeString NonBusinessHoursActionUri: $($AutoAttendant.NonBusinessHoursActionUri) is not a phone number"
-            if($AutoAttendant.NonBusinessHoursActionUri -like "sip:*"){
-                Write-Verbose "$InfoStringPrefix $AAVerboseTypeString NonBusinessHoursActionUri: $($AutoAttendant.NonBusinessHoursActionUri) is a sip address"
-                Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Stripping sip: from the NonBusinessHoursActionUri $($AutoAttendant.NonBusinessHoursActionUri) to grab objectID"
-                $afterHoursTargetCheck = $AutoAttendant.NonBusinessHoursActionUri.substring(4)
-            }else{
-                if($AutoAttendant.NonBusinessHoursActionUri -like "*@*.*"){
-                    Write-Verbose "$InfoStringPrefix $AAVerboseTypeString NonBusinessHoursActionUri is not prefixed with sip: or tel:, but is a valid email address/upn"
-                    $afterHoursTargetCheck = $AutoAttendant.NonBusinessHoursActionUri
-                }
-            }
-            Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Checking if NonBusinessHoursActionUri: $($AutoAttendant.NonBusinessHoursActionUri) exists."
-
-            if(($afterHoursTargetCheck | Get-NASObjectGuid).objguid.guid){
-                $afterHoursTargetGuid = ($afterHoursTargetCheck | Get-NASObjectGuid).objguid.guid
-
-                $userobject = $null
-                $userobject = Get-CsOnlineUser $afterHoursTargetGuid
-
-                $afterHoursTargetUserType = $null
-
-                if($userobject.OwnerUrn -eq $null){
-                    if($userobject.Department -like "*Common Area*" -or $userobject.Department -like "*CAP*"){
-                        $afterHoursTargetUserType = "Common Area Phone"
+    ## Non Business Hours Action target
+    if(([string]::IsNullOrEmpty($AutoAttendant.NonBusinessHoursCallQueue))){
+        if($AutoAttendant.NonBusinessHoursAction -ne "Disconnect"){
+            if(!([string]::IsNullOrEmpty($AutoAttendant.NonBusinessHoursActionTargetUri))){
+                Write-Verbose "$InfoStringPrefix $AAVerboseTypeString NonBusinessHoursAction not set to Disconnect and therefore setting the new NonBusinessHoursAction"
+                Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Checking if NonBusinessHoursAction: $($AutoAttendant.NonBusinessHoursActionTargetUri) is a phone number"
+                if($AutoAttendant.NonBusinessHoursActionTargetUri -like "tel:*" -or $AutoAttendant.NonBusinessHoursActionTargetUri -like "+*"){
+                    Write-Verbose "$InfoStringPrefix $AAVerboseTypeString NonBusinessHoursActionTargetUri: $($AutoAttendant.NonBusinessHoursActionTargetUri) is a phone number, setting the value"
+                    $afterHoursTarget = New-CsAutoAttendantCallableEntity -Identity $AutoAttendant.NonBusinessHoursActionTargetUri -Type ExternalPstn
+                    $afterHoursMenuOption = New-CsAutoAttendantMenuOption -Action TransferCallToTarget -CallTarget $afterHoursTarget -DtmfResponse Automatic
+                }else{
+                    Write-Verbose "$InfoStringPrefix $AAVerboseTypeString NonBusinessHoursActionTargetUri: $($AutoAttendant.NonBusinessHoursActionTargetUri) is not a phone number"
+                    if($AutoAttendant.NonBusinessHoursActionTargetUri -like "sip:*"){
+                        Write-Verbose "$InfoStringPrefix $AAVerboseTypeString NonBusinessHoursActionTargetUri: $($AutoAttendant.NonBusinessHoursActionTargetUri) is a sip address"
+                        Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Stripping sip: from the NonBusinessHoursActionTargetUri $($AutoAttendant.NonBusinessHoursActionTargetUri) to grab objectID"
+                        $afterHoursTargetCheck = $AutoAttendant.NonBusinessHoursActionTargetUri.substring(4)
                     }else{
-                        $afterHoursTargetUserType = "User"
+                        if($AutoAttendant.NonBusinessHoursActionTargetUri -like "*@*.*"){
+                            Write-Verbose "$InfoStringPrefix $AAVerboseTypeString NonBusinessHoursActionTargetUri is not prefixed with sip: or tel:, but is a valid email address/upn"
+                            $afterHoursTargetCheck = $AutoAttendant.NonBusinessHoursActionTargetUri
+                        }
                     }
-                }elseif($userobject.OwnerUrn -eq 'urn:trustedonlineplatformapplication:11cd3e2e-fccb-42ad-ad00-878b93575e07') {
-                    $afterHoursTargetUserType = "Call Queue"
-                }elseif($userobject.OwnerUrn -eq 'urn:trustedonlineplatformapplication:ce933385-9390-45d1-9512-c8d228074e07') {
-                    $afterHoursTargetUserType = "Auto Attendant"
-                }elseif($userobject.OwnerUrn -eq 'urn:device:roomsystem'){
-                    $afterHoursTargetUserType = "Microsoft Teams Room"
-                }else{
-                    $afterHoursTargetUserType = $userobject.OwnerUrn
-                }
-
-                Write-Verbose "$InfoStringPrefix $AAVerboseTypeString The after hours target user type is $afterHoursTargetUserType"
-                if($afterHoursTargetUserType -eq "User"){
-                    Write-Verbose "$InfoStringPrefix $AAVerboseTypeString After hours Target User Type is $afterHoursTargetUserType"
-                    Write-Verbose "$InfoStringPrefix $AAVerboseTypeString NonBusinessHoursActionUri is valid, setting to: $afterHoursTargetGuid"
-                    $afterHoursTarget = New-CsAutoAttendantCallableEntity -Identity $afterHoursTargetGuid -Type User
-                    $afterHoursMenuOption = New-CsAutoAttendantMenuOption -Action TransferCallToTarget -CallTarget $afterHoursTarget -DtmfResponse Automatic
-                }elseif($afterHoursTargetUserType -eq "Call Queue" -or $afterHoursTargetUserType -eq "Auto Attendant"){
-                    Write-Verbose "$InfoStringPrefix $AAVerboseTypeString After hours User Type is $afterHoursTargetUserType"
-                    Write-Verbose "$InfoStringPrefix $AAVerboseTypeString NonBusinessHoursActionUri is valid, setting to: $afterHoursTargetGuid"
-                    $afterHoursTarget = New-CsAutoAttendantCallableEntity -Identity $afterHoursTargetGuid -Type ApplicationEndpoint
-                    $afterHoursMenuOption = New-CsAutoAttendantMenuOption -Action TransferCallToTarget -CallTarget $afterHoursTarget -DtmfResponse Automatic
-                }else{
-                    Write-Error "$InfoStringPrefix $AAVerboseTypeString After hours Target User Type not determined, skipping setting default target"
+                    Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Checking if NonBusinessHoursActionTargetUri: $($AutoAttendant.NonBusinessHoursActionTargetUri) exists."
+        
+                    if(($afterHoursTargetCheck | Get-NASObjectGuid).objguid.guid){
+                        $afterHoursTargetGuid = ($afterHoursTargetCheck | Get-NASObjectGuid).objguid.guid
+        
+                        $userobject = $null
+                        $userobject = Get-CsOnlineUser $afterHoursTargetGuid
+        
+                        $afterHoursTargetUserType = $null
+        
+                        if($userobject.OwnerUrn -eq $null){
+                            if($userobject.Department -like "*Common Area*" -or $userobject.Department -like "*CAP*"){
+                                $afterHoursTargetUserType = "Common Area Phone"
+                            }else{
+                                $afterHoursTargetUserType = "User"
+                            }
+                        }elseif($userobject.OwnerUrn -eq 'urn:trustedonlineplatformapplication:11cd3e2e-fccb-42ad-ad00-878b93575e07') {
+                            $afterHoursTargetUserType = "Call Queue"
+                        }elseif($userobject.OwnerUrn -eq 'urn:trustedonlineplatformapplication:ce933385-9390-45d1-9512-c8d228074e07') {
+                            $afterHoursTargetUserType = "Auto Attendant"
+                        }elseif($userobject.OwnerUrn -eq 'urn:device:roomsystem'){
+                            $afterHoursTargetUserType = "Microsoft Teams Room"
+                        }else{
+                            $afterHoursTargetUserType = $userobject.OwnerUrn
+                        }
+        
+                        Write-Verbose "$InfoStringPrefix $AAVerboseTypeString The default target user type is $afterHoursTargetUserType"
+                        if($afterHoursTargetUserType -eq "User"){
+                            Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Default Target User Type is $afterHoursTargetUserType"
+                            Write-Verbose "$InfoStringPrefix $AAVerboseTypeString NonBusinessHoursActionTargetUri is valid, setting to: $afterHoursTargetGuid"
+                            $afterHoursTarget = New-CsAutoAttendantCallableEntity -Identity $afterHoursTargetGuid -Type User
+                            $afterHoursMenuOption = New-CsAutoAttendantMenuOption -Action TransferCallToTarget -CallTarget $afterHoursTarget -DtmfResponse Automatic
+                        }elseif($afterHoursTargetUserType -eq "Call Queue" -or $afterHoursTargetUserType -eq "Auto Attendant"){
+                            Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Default Target User Type is $afterHoursTargetUserType"
+                            Write-Verbose "$InfoStringPrefix $AAVerboseTypeString NonBusinessHoursActionTargetUri is valid, setting to: $afterHoursTargetGuid"
+                            $afterHoursTarget = New-CsAutoAttendantCallableEntity -Identity $afterHoursTargetGuid -Type ApplicationEndpoint
+                            $afterHoursMenuOption = New-CsAutoAttendantMenuOption -Action TransferCallToTarget -CallTarget $afterHoursTarget -DtmfResponse Automatic
+                        }else{
+                            Write-Error "$ErrorStringPrefix $AAVerboseTypeString Default Target User Type not determined, skipping setting default target"
+                        }
+                    }else{
+                        Write-Error "$ErrorStringPrefix $AAVerboseTypeString NonBusinessHoursActionTargetUri: $afterHoursTargetCheck doesn't exist/cannot find GUID."
+                        Write-Verbose "$InfoStringPrefix $AAVerboseTypeString As target cannot be found, set the Default menu option to Disconnect."
+                        $afterHoursMenuOption = New-CsAutoAttendantMenuOption -Action DisconnectCall -DtmfResponse Automatic
+                    }
                 }
             }else{
-                Write-Error "$ErrorStringPrefix $AAVerboseTypeString NonBusinessHoursActionUri: $afterHoursTargetCheck doesn't exist/cannot find GUID."
-                Write-Verbose "$InfoStringPrefix $AAVerboseTypeString As target cannot be found, set the After hours menu option to Disconnect."
+                Write-Verbose "$InfoStringPrefix $AAVerboseTypeString NonBusinessHoursActionTargetUri is null or empty, setting the Default menu option to Disconnect."
                 $afterHoursMenuOption = New-CsAutoAttendantMenuOption -Action DisconnectCall -DtmfResponse Automatic
             }
+        }else{
+            Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Non Business Hours Action set to Disconnect, setting default menu option to Disconnect."
+            $afterHoursMenuOption = New-CsAutoAttendantMenuOption -Action DisconnectCall -DtmfResponse Automatic
         }
     }else{
-        Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Default action set to Disconnect, setting After hours menu option to Disconnect."
-        $afterHoursMenuOption = New-CsAutoAttendantMenuOption -Action DisconnectCall -DtmfResponse Automatic
+        Write-Verbose "$InfoStringPrefix $AAVerboseTypeString Default target call queue already configured: $($AutoAttendant.NonBusinessHoursCallQueue)"
+        $afterHoursTarget = New-CsAutoAttendantCallableEntity -Identity $AutoAttendant.NonBusinessHoursCallQueue -Type ApplicationEndpoint
+        $afterHoursMenuOption = New-CsAutoAttendantMenuOption -Action TransferCallToTarget -CallTarget $afterHoursTarget -DtmfResponse Automatic
     }
 
     #After hours further configuration
@@ -3309,7 +3440,7 @@ function New-NasTeamsResourceAccountAssociation{
     $i = 0
     while (!(Get-CsOnlineApplicationInstance -Identity $ResourceAccountObjectID)) {
         Write-Verbose "$InfoStringPrefix $RATypeAccountString Resource account: $ResourceAccountObjectID is not ready yet"
-        if($i -gt 5){
+        if($i -gt 15){
             Write-Error "$ErrorStringPrefix $RATypeAccountString $ResourceAccountObjectID is not available for use yet. Please try again later."
             break
         }else{
@@ -3344,7 +3475,6 @@ function New-NasTeamsResourceAccountAssociation{
             }
             New-CsOnlineApplicationInstanceAssociation @NewCQAppInstanceParameters -ErrorAction Stop
         }catch{
-            Write-Verbose "$ErrorStringPrefix $RATypeAccountString $ResourceAccountObjectID is not available for use yet. Please try again later."
             Write-Error "$ErrorStringPrefix $RATypeAccountString $ResourceAccountObjectID is not available for use yet. Please try again later."
         }
     }else{
