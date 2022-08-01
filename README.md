@@ -20,8 +20,6 @@ NOTE: You can also specify the -InstallModules switch to provide an interactive 
 
 ## What this won't do (yet!)
 **Auto Attendants**  
-- Associate greeting audio files
-- Music on Hold
 - Holidays/Holiday Actions
 - Dial Scope
 - Shared Voicemail
