@@ -18,6 +18,15 @@ NOTE: You can also specify the -InstallModules switch to provide an interactive 
 2. Copy the TeamsAACQTools folder into your PowerShell module repository on your local workstation.
 3. Open PowerShell and run "Import-Module TeamsAACQTools".
 
+## New features/fixes
+**Auto Attendants 01/08/22**
+- Greeting audio files supported
+- Non business hours audio files supported
+- Action target now has logic to detect what type of endpoint such as application endpoint, user, PSTN
+- New sharedvoicemail parameter required, now added to ensure build is successful (MSFT change)
+- Fixed greetings error this was due to the object type
+- Changed identities to identity for resource account (MSFT change)
+- Added more fields to the Excel export
 ## What this won't do (yet!)
 **Auto Attendants**  
 - Holidays/Holiday Actions
