@@ -15,7 +15,6 @@ Streamline the process of building Auto Attendants, Call Queues, and Resource Ac
   - [Import-NasAACQData Function](#import-nasaacqdata-function)
   - [Import-NasCQ Function](#import-nascq-function)
   - [Import-NasAA Function](#import-nasaa-function)
-- [Parameters](#parameters)
 
 ## Pre-Requirements
 Ensure the following prerequisites are met before using the TeamsAACQTools PowerShell Module:
