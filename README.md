@@ -26,7 +26,7 @@ Ensure the following prerequisites are met before using the TeamsAACQTools Power
 
 ## Module Installation
 1. Download the module from the GitHub repository.
-2. Copy the TeamsAACQTools folder into your PowerShell module repository on your local workstation. To find your local module repository, type `Get-Module -ListAvailable | Select-Object -ExpandProperty ModuleBase` in a PowerShell window.
+2. Copy the TeamsAACQTools folder into your PowerShell module repository on your local workstation. To find your local module repository, type `$env:PSModulePath` in a PowerShell window.
 3. Open PowerShell and run: `Import-Module TeamsAACQTools`.
 
 ## New Features/Fixes
