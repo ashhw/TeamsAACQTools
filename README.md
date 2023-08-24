@@ -6,15 +6,15 @@ Streamline the process of building Auto Attendants, Call Queues, and Resource Ac
 - [Pre-Requirements](#pre-requirements)
 - [Module Installation](#module-installation)
 - [New Features/Fixes](#new-featuresfixes)
-- [Functionality](#functionality)
-  - [Import-NasAACQData](#import-nasaacqdata)
-  - [Import-NasCQ](#import-nascq)
-  - [Import-NasAA](#import-nasaa)
 - [Usage Instructions](#usage-instructions)
   - [Export the RGS Configuration](#export-the-rgs-configuration)
   - [Build the Excel Workbook](#build-the-excel-workbook)
   - [Build Call Queues in Teams](#build-call-queues-in-teams)
   - [Build Auto Attendants in Teams](#build-auto-attendants-in-teams)
+- [Functionality](#functionality)
+  - [Import-NasAACQData Function](#import-nasaacqdata-function)
+  - [Import-NasCQ Function](#import-nascq-function)
+  - [Import-NasAA Function](#import-nasaa-function)
 - [Parameters](#parameters)
 
 ## Pre-Requirements
@@ -43,7 +43,7 @@ Ensure the following prerequisites are met before using the TeamsAACQTools Power
 - Expanded Excel export with additional fields.
 - Implemented logging with specified log folder.
 
-## RGS Configuration Export
+## Export the RGS Configuration
 
 To export the Response Group configuration from Skype for Business, use the following command in the Skype for Business Management Shell:
 
@@ -53,7 +53,7 @@ Export-CsRgsConfiguration -Source "ApplicationServer:my-sfb-fe01.somedomain.com"
 
 Please adjust the command parameters according to your specific Skype environment.
 
-## Building the Excel Workbook
+## Build the Excel Workbook
 
 Once you have exported the RGSConfig.zip (ensure it's unzipped to your desired location) from Skype for Business, you can construct the Excel workbook using this example command:
 
@@ -67,7 +67,7 @@ Import-NasAACQData -rootFolder "C:\AACQ\RgsImportExport" -ffmpeglocation "C:\ffm
 - Agents will be listed as a SIP address without the "sip:" prefix, separated by commas.
 - If Language isn't specified, the default Language will be en-GB.
 
-## Building Teams Call Queues
+## Build Call Queues in Teams
 
 After creating the AACQDataImport.xlsx file and verifying its accuracy, you can execute the following command to create Call Queues in Teams, along with associated Resource Accounts and Resource Account Associations:
 
@@ -77,7 +77,7 @@ Import-NasCQ -CQData "C:\AACQ\RgsImportExport\AACQDataImport-TestLab.xlsx" -logF
 
 By default, this command prompts you to back up the Call Queues before proceeding. You can skip this prompt by using the `-NoBackup` switch.
 
-## Building Teams Auto Attendants
+## Build Auto Attendants in Teams
 
 Once the Call Queues are established in Teams, you can use the Auto Attendant function to create Auto Attendants and associate them with the Call Queues (if needed), along with Resource Accounts and Resource Account Associations:
 
@@ -91,6 +91,8 @@ By default, this command prompts you to back up the Auto Attendants before proce
 - Business Hours will be rounded to the nearest multiple of 15. If this exceeds 00:00, the Auto Attendant is assumed to be open 24 hours.
 - If Business Hours aren't specified for every day, it's assumed that the Auto Attendant is open 24/7.
 - If Business Hours aren't specified for particular days, the Auto Attendant is assumed to be open every day except for those with no specified times.
+
+## Functionality ##
 
 ## Import-NasAACQData Function
 
