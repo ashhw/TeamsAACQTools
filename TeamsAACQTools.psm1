@@ -745,8 +745,16 @@ function Import-NasAACQData {
         [parameter()]
         [string]$aaNamePrefix,
         [parameter()]
-        [string]$aaReplacementSuffix
+        [string]$aaReplacementSuffix,
+        [Parameter(Mandatory=$true)]
+        [string]$logFolder
     )
+
+    #Define Transcript Log Files 
+    $logfile = (Get-Date).tostring("yyyyMMdd-hhmmss")
+    $transcriptfile = (New-Item -itemtype File -Path "$logfolder" -Name ("Import-NasAACQData-$logfile" + ".log"))
+    Start-Transcript -Path $transcriptfile
+    Write-Host "Transcript logging started $($transcriptfile)"
 
     Write-Host "`n----------------------------------------------------------------------------------------------
     `n TeamsAACQTools - Ash Ward - Nasstar
@@ -1515,12 +1523,13 @@ Function Import-NasAA {
         [switch]$NoBackup,
 
         #Root folder used for log file purposes
+        [Parameter(Mandatory=$true)]
         [String]$logFolder
     )
 
     #Define Transcript Log Files 
     $logfile = (Get-Date).tostring("yyyyMMdd-hhmmss")
-    $transcriptfile = (New-Item -itemtype File -Path "$logfolder" -Name ($logfile + ".log"))
+    $transcriptfile = (New-Item -itemtype File -Path "$logfolder" -Name ("Import-NasAA-$logfile" + ".log"))
     Start-Transcript -Path $transcriptfile
     Write-Host "Transcript logging started $($transcriptfile)"
 
@@ -2620,15 +2629,19 @@ Function Import-NasCQ {
 
         [switch]$NoRA,
 
-        [switch]$NoBackup
+        [switch]$NoBackup,
+
+        #Root folder used for log file purposes
+        [Parameter(Mandatory=$true)]
+        [String]$logFolder
 
     )
 
     #Define Transcript Log Files 
-    #$logfile = (Get-Date).tostring("yyyyMMdd-hhmmss")
-    #$transcriptfile = (New-Item -itemtype File -Path ".\" -Name ($logfile + ".log"))
-    #Start-Transcript -Path $transcriptfile
-    #Write-Host "Transcript logging started $($transcriptfile)"
+    $logfile = (Get-Date).tostring("yyyyMMdd-hhmmss")
+    $transcriptfile = (New-Item -itemtype File -Path "$logfolder" -Name ("Import-NasCQ-$logfile" + ".log"))
+    Start-Transcript -Path $transcriptfile
+    Write-Host "Transcript logging started $($transcriptfile)"
 
     $errorStringPrefix = "[ERROR]"
     $InfoStringPrefix = "[INFO]"

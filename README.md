@@ -18,6 +18,16 @@ NOTE: You can also specify the -InstallModules switch to provide an interactive 
 2. Copy the TeamsAACQTools folder into your PowerShell module repository on your local workstation.
 3. Open PowerShell and run "Import-Module TeamsAACQTools".
 
+## New features/fixes
+**Auto Attendants 01/08/22**
+- Greeting audio files supported
+- Non business hours audio files supported
+- Action target now has logic to detect what type of endpoint such as application endpoint, user, PSTN
+- New sharedvoicemail parameter required, now added to ensure build is successful (MSFT change)
+- Fixed greetings error this was due to the object type
+- Changed identities to identity for resource account (MSFT change)
+- Added more fields to the Excel export
+- Added logging (specify the log folder)
 ## What this won't do (yet!)
 **Auto Attendants**  
 - Holidays/Holiday Actions
@@ -43,7 +53,7 @@ Note: Amend the command to suit the Skype environment.
 **Build the Excel workbook**  
 Once you have the RGSConfig.zip (Unzip this to your chosen location) exported from Skype for Business, you can build the Excel workbook using the following example command:  
 ```powershell
-Import-NasAACQData -rootFolder "C:\AACQ\RgsImportExport" -ffmpeglocation "C:\ffmpeg\bin\ffmpeg.exe" -TenantDomain "mytenant.onmicrosoft.com" -CQRAPrefix "ra_cq_" -AARAPrefix "ra_aa_" -cqReplacementSuffix "CQ" -aaReplacementSuffix "AA" -Verbose
+Import-NasAACQData -rootFolder "C:\AACQ\RgsImportExport" -ffmpeglocation "C:\ffmpeg\bin\ffmpeg.exe" -TenantDomain "mytenant.onmicrosoft.com" -CQRAPrefix "ra_cq_" -AARAPrefix "ra_aa_" -cqReplacementSuffix "CQ" -aaReplacementSuffix "AA"  -logFolder "C:\path\to\log" -Verbose
 ```
 NOTE: When the Excel workbook is built there are a few key items to note:
 - Agent Alert Time will be rounded up to the next multiple of 15 (Teams only allows multiples of 15)
@@ -54,13 +64,13 @@ NOTE: When the Excel workbook is built there are a few key items to note:
 **Build the Call Queues in Teams**  
 Once you have built the AACQDataImport.xlsx file and verified that the data is correct, you can run it against Teams to build the Call Queues, along with Resource Accounts and Resource Account Association:  
 ```powershell
-Import-NasCQ -CQData "C:\AACQ\RgsImportExport\AACQDataImport-TestLab.xlsx"
+Import-NasCQ -CQData "C:\AACQ\RgsImportExport\AACQDataImport-TestLab.xlsx" -logFolder "C:\path\to\log" -Verbose
 ```
 
 **Build the Auto Attendants in Teams**  
 Once you have built the Call Queues in Teams, you can run the Auto Attendant function to build the Auto Attendants and associate with the Call Queues (If reuqired), along with Resource Accounts and Resource Account Association:  
 ```powershell
-Import-NasAA -AAData "C:\AACQ\RgsImportExport\AACQDataImport-TestLab.xlsx"
+Import-NasAA -AAData "C:\AACQ\RgsImportExport\AACQDataImport-TestLab.xlsx" -logFolder "C:\path\to\log" -Verbose
 ```
 NOTE: When the Auto Attendants are being built:
 - Business Hours will be converted to the nearest multiple of 15, if this moves over to 00:00, then the Auto Attendant is assumed to be open 24 hours.
@@ -97,6 +107,9 @@ Specify the ffmpeg.exe path for the audio file conversion to .mp3.
 **-SkipAudio [OPTIONAL]**  
 Specify this to skip the audio conversion as you would like to do this manually or will be using new audio files.
 
+**-logFolder [MANDATORY]**  
+Specify the location to output the log transcript to. Made mandatory to ensure the user has the ability to check what happened during the build.
+
 ## Import-NasCQ
 ### Parameters
 **-CQData**  
@@ -114,6 +127,9 @@ Specify if you wish to exclude resource account creation.
 **-NoBackup**  
 Specify if you wish to exclude the backup process. (Useful for Greenfield sites without any existing Call Queues)
 
+**-logFolder [MANDATORY]**  
+Specify the location to output the log transcript to. Made mandatory to ensure the user has the ability to check what happened during the build.
+
 ## Import-NasAA
 ### Parameters
 **-AAData**  
@@ -130,4 +146,7 @@ Specify if you wish to exclude resource account creation.
 
 **-NoBackup**  
 Specify if you wish to exclude the backup process. (Useful for Greenfield sites without any existing Auto Attendants)
+
+**-logFolder [MANDATORY]**  
+Specify the location to output the log transcript to. Made mandatory to ensure the user has the ability to check what happened during the build.
 
