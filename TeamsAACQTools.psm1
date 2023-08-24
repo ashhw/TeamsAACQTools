@@ -168,7 +168,7 @@ class NasAA {
     [ValidateSet('Disconnect','Forward','Voicemail','SharedVoicemail')]
     [string]$NonBusinessHoursAction = 'Disconnect'
 
-    [string]$NonBusinessHoursActionUri
+    [string]$NonBusinessHoursActionTargetUri
 
     [string]$NonBusinessHoursActionTextToSpeechPrompt
 
@@ -476,13 +476,11 @@ function Get-NASAgentGuid {
             if($CQAgentGUID){
                 Write-Verbose "$InfoStringPrefix $AgentCheckVerboseTypeString Building the object: $($AgentUPN) - ObjectID: $($CQAgentGUID)"
                 #Create the NasCQAgent object with the agents UPN and objectID
-                [NasObjLookup]::new($AgentUPN,$CQAgentGUID)
-                Write-Verbose "$InfoStringPrefix $AgentCheckVerboseTypeString Object built: $($TargetName) - ObjectID: $($CQAgentGUID)"
+                [NasCQAgent]::new($AgentUPN,$CQAgentGUID)
+                Write-Verbose "$InfoStringPrefix $AgentCheckVerboseTypeString Object built: $($AgentUPN) - ObjectID: $($CQAgentGUID)"
             }else{
                 Write-Error "$InfoStringPrefix $AgentCheckVerboseTypeString Object doesn't exist: $($AgentUPN)"
             }
-            #Create the NasCQAgent object with the agents UPN and objectID
-            [NasCQAgent]::new($AgentUPN,$CQAgentGUID)
         }
     }
     End{
@@ -826,21 +824,21 @@ function Import-NasAACQData {
             if($_.NonBusinessHoursAction.Uri -like "sip:+*"){
                 Write-Verbose "Non business hours action target: $($_.NonBusinessHoursAction.Uri) is a phone number, converting to tel:+"
                 $e164num1 = $($_.NonBusinessHoursAction.Uri).substring(4).split("@")[0]
-                $NonBusinessHoursActionUri = "tel:" + $e164num1
-                Write-Verbose "Non business hours action target converted: $NonBusinessHoursActionUri"
+                $NonBusinessHoursActionTargetUri = "tel:" + $e164num1
+                Write-Verbose "Non business hours action target converted: $NonBusinessHoursActionTargetUri"
             }else{
                 Write-Verbose "$($_.NonBusinessHoursAction.Uri) not a phone number, passing value back"
                 if((Confirm-NasValidTarget -Target $_.NonBusinessHoursAction.Uri) -eq $True){
                     Write-Verbose "Importing non business hours action target: $($_.NonBusinessHoursAction.Uri)"
-                    $NonBusinessHoursActionUri = $_.NonBusinessHoursAction.Uri
+                    $NonBusinessHoursActionTargetUri = $_.NonBusinessHoursAction.Uri
                 }else{
                     Write-Verbose "Invalid non business hours action target: $($_.NonBusinessHoursAction.Uri)"
-                    $NonBusinessHoursActionUri = "Invalid Target"
+                    $NonBusinessHoursActionTargetUri = "Invalid Target"
                 }
             }
         }else{
             Write-Verbose "No non business hours action target specified, setting value to null"
-            $NonBusinessHoursActionUri = ""
+            $NonBusinessHoursActionTargetUri = ""
         }
 
         if($_.DefaultAction.Uri){
@@ -1034,7 +1032,7 @@ function Import-NasAACQData {
             NonBusinessHoursActionTextToSpeechPrompt = $NonBusinessHoursActionTTSPrompt
             NonBusinessHoursActionQuestion = $NonBusinessHoursActionQuestion
             NonBusinessHoursActionQueueID = $NonBusinessHoursQueueID
-            NonBusinessHoursActionUri = $NonBusinessHoursActionUri
+            NonBusinessHoursActionTargetUri = $NonBusinessHoursActionTargetUri
             HolidayAction = if($_.HolidayAction.Action -like "TransferTo*"){"Forward"}else{"Disconnect"}
             UseDefaultMusicOnHold = $UseDefaultMusicOnHold
             CustomMusicOnHoldFileID = $CustomMusicOnHoldFileID
@@ -1681,7 +1679,7 @@ Function Import-NasAA {
         $AAObj.DefaultActionTextToSpeech = $aa.DefaultActionTextToSpeech
         $AAObj.NonBusinessHoursActionTextToSpeechPrompt = $aa.NonBusinessHoursActionTextToSpeechPrompt
         $AAObj.NonBusinessHoursAction = $aa.NonBusinessHoursAction
-        $AAObj.NonBusinessHoursActionUri = $aa.NonBusinessHoursActionUri
+        $AAObj.NonBusinessHoursActionTargetUri = $aa.NonBusinessHoursActionTargetUri
         $AAObj.LanguageID = $aa.LanguageID
         $AAObj.TimeZone = $aa.TimeZone
         $AAObj.BusinessHours = $AABusinessHours
@@ -2781,6 +2779,28 @@ Function Import-NasCQ {
         $CQObj.TimeoutSharedVoicemailTextToSpeechPrompt = $x.TimeoutSharedVoicemailTextToSpeechPrompt
         $CQObj.MusicOnHoldAudioFilePath = $x.MusicOnHoldAudioFilePath
         $CQObj.WelcomeMusicAudioFilePath = $x.WelcomeMusicAudioFilePath
+
+        # Create an array to hold NasCQAgent instances
+        $AgentsArray = @()
+
+        # Check if $x.Agents contains a comma
+        if ($x.Agents -like '*,*') {
+            # Split the comma-separated string of UPNs into an array
+            $agentUPNs = $x.Agents -split ','
+
+            # Loop through each agent UPN and create NasCQAgent instances
+            foreach ($agentUPN in $agentUPNs) {
+                $agent = [NasCQAgent]::new($agentUPN.Trim(), [guid]::NewGuid())
+                $AgentsArray += $agent
+            }
+        }
+        else {
+            # Create a single NasCQAgent instance for the single UPN
+            $agent = [NasCQAgent]::new($x.Agents.Trim(), [guid]::NewGuid())
+            $AgentsArray += $agent
+        }
+
+        $CQObj.Agents = $AgentsArray
 
         #Only populate the phone number if it exists otherwise it causes an error
         if($x.PhoneNumber){
