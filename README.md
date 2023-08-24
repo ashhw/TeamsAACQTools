@@ -19,6 +19,9 @@ NOTE: You can also specify the -InstallModules switch to provide an interactive 
 3. Open PowerShell and run "Import-Module TeamsAACQTools".
 
 ## New features/fixes
+**Call Queues 24/08/23**
+- Fixed agents adding into call queues
+
 **Auto Attendants 01/08/22**
 - Greeting audio files supported
 - Non business hours audio files supported
@@ -28,6 +31,7 @@ NOTE: You can also specify the -InstallModules switch to provide an interactive 
 - Changed identities to identity for resource account (MSFT change)
 - Added more fields to the Excel export
 - Added logging (specify the log folder)
+- 
 ## What this won't do (yet!)
 **Auto Attendants**  
 - Holidays/Holiday Actions
