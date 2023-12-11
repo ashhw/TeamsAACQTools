@@ -1,152 +1,178 @@
-# TeamsAACQTools
+# TeamsAACQTools PowerShell Module
 
-Building out several Auto Attendants, Call Queues and Resource Accounts in Microsoft Teams is painstakingly slow, especially if the deployment is a Skype for Business migration and you already have the data required. This module will help build out the Auto Attendants, Call Queues and Resource accounts from an Excel workbook.
+Streamline the process of building Auto Attendants, Call Queues, and Resource Accounts in Microsoft Teams with the TeamsAACQTools PowerShell Module. This module is designed to alleviate the complexities of deploying these components, particularly during Skype for Business migrations when existing data is available. The module facilitates the conversion of the "RGSConfig.zip" file from Skype for Business into an Excel workbook that can be seamlessly used to configure these elements in Teams.
 
-The module can be used to take the "RGSConfig.zip" file from Skype for Business and convert it into an Excel workbook that can be used to build the configuration in Teams.
+## Table of Contents
+- [Pre-Requirements](#pre-requirements)
+- [Module Installation](#module-installation)
+- [New Features/Fixes](#new-featuresfixes)
+- [Usage Instructions](#usage-instructions)
+  - [Export the RGS Configuration](#export-the-rgs-configuration)
+  - [Build the Excel Workbook](#build-the-excel-workbook)
+  - [Build Call Queues in Teams](#build-call-queues-in-teams)
+  - [Build Auto Attendants in Teams](#build-auto-attendants-in-teams)
+- [Functionality](#functionality)
+  - [Import-NasAACQData Function](#import-nasaacqdata-function)
+  - [Import-NasCQ Function](#import-nascq-function)
+  - [Import-NasAA Function](#import-nasaa-function)
 
-NOTE: Only supports Powershell 7.0 and above.  
-CREDIT: github.com/lazywinadmin for the Remove-StringSpecialCharacter function.
 ## Pre-Requirements
-1. Install the ImportExcel module - Run as Administrator in PowerShell: Install-Module ImportExcel
-2. Install the MicrosoftTeams Module - Run as Administrator in PowerShell: Install-Module MicrosoftTeams
-3. Download ffmpeg - Choose your OS and download from here: https://www.ffmpeg.org/download.html
-    a. Copy this to your chosen location, example "C:\ffmpeg"
+Ensure the following prerequisites are met before using the TeamsAACQTools PowerShell Module:
+1. Install the ImportExcel module: Run as Administrator in PowerShell: `Install-Module ImportExcel`
+2. Install the MicrosoftTeams Module: Run as Administrator in PowerShell: `Install-Module MicrosoftTeams`
+3. Download ffmpeg: Choose your OS and download from [here](https://www.ffmpeg.org/download.html). Copy it to a chosen location, e.g., "C:\ffmpeg".
 
-NOTE: You can also specify the -InstallModules switch to provide an interactive approach to install the required modules. Do not use if you are using as part of an automation job.
+**Note:** You can also use the `-InstallModules` switch for an interactive installation of required modules. Avoid using this in automation scenarios.
+
 ## Module Installation
-1. Download the module from the github repository.
-2. Copy the TeamsAACQTools folder into your PowerShell module repository on your local workstation.
-3. Open PowerShell and run "Import-Module TeamsAACQTools".
+1. Download the module from the GitHub repository.
+2. Copy the TeamsAACQTools folder into your PowerShell module repository on your local workstation. To find your local module repository, type `$env:PSModulePath` in a PowerShell window.
+3. Open PowerShell and run: `Import-Module TeamsAACQTools`.
 
-## New features/fixes
+## New Features/Fixes
+**Call Queues 24/08/23**
+- Fixed issue with agents not being added to call queues.
+
 **Auto Attendants 01/08/22**
-- Greeting audio files supported
-- Non business hours audio files supported
-- Action target now has logic to detect what type of endpoint such as application endpoint, user, PSTN
-- New sharedvoicemail parameter required, now added to ensure build is successful (MSFT change)
-- Fixed greetings error this was due to the object type
-- Changed identities to identity for resource account (MSFT change)
-- Added more fields to the Excel export
-- Added logging (specify the log folder)
-## What this won't do (yet!)
-**Auto Attendants**  
-- Holidays/Holiday Actions
-- Dial Scope
-- Shared Voicemail
-- Shared Voicemail Transcription
-- Operator
-- Voice Inputs
-- Menu Options
+- Added support for greeting audio files and non-business hours audio files.
+- Enhanced action target logic to detect endpoint type.
+- Introduced the required `sharedvoicemail` parameter (MSFT change).
+- Resolved greetings error related to object type.
+- Updated `identity` to `identities` for resource account (MSFT change).
+- Expanded Excel export with additional fields.
+- Implemented logging with specified log folder.
 
-**Call Queues**  
-- Caller ID
-- Greeting
-- Calling Channels
+## Export the RGS Configuration
 
-**Export the RGS configuration**  
-To export the Response Group configuration from Skype for Business, run the following command on the Skype for Business Management Shell:  
+To export the Response Group configuration from Skype for Business, use the following command in the Skype for Business Management Shell:
+
 ```powershell
 Export-CsRgsConfiguration -Source "ApplicationServer:my-sfb-fe01.somedomain.com" -FileName "C:\Exports\Rgs.zip"
 ```
-Note: Amend the command to suit the Skype environment.
 
-**Build the Excel workbook**  
-Once you have the RGSConfig.zip (Unzip this to your chosen location) exported from Skype for Business, you can build the Excel workbook using the following example command:  
+Please adjust the command parameters according to your specific Skype environment.
+
+## Build the Excel Workbook
+
+Once you have exported the RGSConfig.zip (ensure it's unzipped to your desired location) from Skype for Business, you can construct the Excel workbook using this example command:
+
 ```powershell
 Import-NasAACQData -rootFolder "C:\AACQ\RgsImportExport" -ffmpeglocation "C:\ffmpeg\bin\ffmpeg.exe" -TenantDomain "mytenant.onmicrosoft.com" -CQRAPrefix "ra_cq_" -AARAPrefix "ra_aa_" -cqReplacementSuffix "CQ" -aaReplacementSuffix "AA"  -logFolder "C:\path\to\log" -Verbose
 ```
-NOTE: When the Excel workbook is built there are a few key items to note:
-- Agent Alert Time will be rounded up to the next multiple of 15 (Teams only allows multiples of 15)
-- If no OverflowThreshold is specified, but an OverflowAction is specified, then default OverflowThreshold will be set to 1
-- Agents will be displayed as a sip address without the "sip:" and seperated by commas
-- If no Langauge is specified, Language will be defaulted to en-GB
 
-**Build the Call Queues in Teams**  
-Once you have built the AACQDataImport.xlsx file and verified that the data is correct, you can run it against Teams to build the Call Queues, along with Resource Accounts and Resource Account Association:  
+**Important Notes**:
+- Agent Alert Time will be rounded up to the next multiple of 15 (Teams only allows multiples of 15).
+- If OverflowThreshold isn't specified but OverflowAction is, the default OverflowThreshold will be set to 1.
+- Agents will be listed as a SIP address without the "sip:" prefix, separated by commas.
+- If Language isn't specified, the default Language will be en-GB.
+
+## Build Call Queues in Teams
+
+After creating the AACQDataImport.xlsx file and verifying its accuracy, you can execute the following command to create Call Queues in Teams, along with associated Resource Accounts and Resource Account Associations:
+
 ```powershell
 Import-NasCQ -CQData "C:\AACQ\RgsImportExport\AACQDataImport-TestLab.xlsx" -logFolder "C:\path\to\log" -Verbose
 ```
 
-**Build the Auto Attendants in Teams**  
-Once you have built the Call Queues in Teams, you can run the Auto Attendant function to build the Auto Attendants and associate with the Call Queues (If reuqired), along with Resource Accounts and Resource Account Association:  
+By default, this command prompts you to back up the Call Queues before proceeding. You can skip this prompt by using the `-NoBackup` switch.
+
+## Build Auto Attendants in Teams
+
+Once the Call Queues are established in Teams, you can use the Auto Attendant function to create Auto Attendants and associate them with the Call Queues (if needed), along with Resource Accounts and Resource Account Associations:
+
 ```powershell
 Import-NasAA -AAData "C:\AACQ\RgsImportExport\AACQDataImport-TestLab.xlsx" -logFolder "C:\path\to\log" -Verbose
 ```
-NOTE: When the Auto Attendants are being built:
-- Business Hours will be converted to the nearest multiple of 15, if this moves over to 00:00, then the Auto Attendant is assumed to be open 24 hours.
-- If the Business Hours are not specified on every day, it is assumed that the Auto Attendant is open 24/7.
-- If the Business Hours are not specified on specific days, it is assumed the Auto Attendant is open on every day except the days that don't have times specified.
 
-## Import-NasAACQData
+By default, this command prompts you to back up the Auto Attendants before proceeding. You can bypass this prompt using the `-NoBackup` switch.
+
+**Additional Information**:
+- Business Hours will be rounded to the nearest multiple of 15. If this exceeds 00:00, the Auto Attendant is assumed to be open 24 hours.
+- If Business Hours aren't specified for every day, it's assumed that the Auto Attendant is open 24/7.
+- If Business Hours aren't specified for particular days, the Auto Attendant is assumed to be open every day except for those with no specified times.
+
+## Functionality ##
+
+## Import-NasAACQData Function
+
+This function allows you to import AACQ (Auto Attendant and Call Queue) data. It facilitates the conversion and configuration of data from Skype for Business Response Group export into a format suitable for Teams.
+
 ### Parameters
+
 **-rootFolder**  
-Specify the path to the RgsImportExport folder from the Skype for Business RGS export.
-e.g. "C:\Folder\SomeFolder\RgsImportExport"
+Path to the RgsImportExport folder from the Skype for Business RGS export, e.g., "C:\Folder\SomeFolder\RgsImportExport".
 
 **-Interactive**  
-If there is a duplicate Music on Hold entry in the Skype for Business Response Group configuration, i.e. Two workflows target the same call queue (therefore using call queue Music on Hold). Use -Interactive parameter to be prompted with an interface to choose the correct Music on Hold to use. This also applies to the LanguageID.
+Use this parameter when there's a duplicate Music on Hold entry in the Response Group configuration. It prompts you to choose the correct Music on Hold or LanguageID entry.
 
 **-CQRAPrefix (OPTIONAL)**  
-Specify the prefix of the call queue resource account. i.e. racq_
+Prefix for the call queue resource account, e.g., racq_.
 
 **-AARAPrefix (OPTIONAL)**  
-Specify the prefix of the call queue resource account. i.e. raaa_
+Prefix for the Auto Attendant resource account, e.g., raaa_.
 
 **-cqReplacementSuffix (OPTIONAL)**  
-Specify the suffix for the Call Queue name. i.e. "Queue"
+Suffix for the Call Queue name, e.g., "Queue".
 
 **-aaReplacementSuffix (OPTIONAL)**  
-Specify the suffix for the Auto Attendant name. i.e. "Attendant"
+Suffix for the Auto Attendant name, e.g., "Attendant".
 
 **-TenantDomain**  
-Specify the tenant domain, this is used to build the userprincipalname for the Resource Accounts. i.e. "@testlab.onmicrosoft.com"
+Tenant domain used to build the userprincipalname for Resource Accounts, e.g., "@testlab.onmicrosoft.com".
 
 **-ffmpeglocation**  
-Specify the ffmpeg.exe path for the audio file conversion to .mp3.
+Path to ffmpeg.exe for audio file conversion to .mp3.
 
 **-SkipAudio [OPTIONAL]**  
-Specify this to skip the audio conversion as you would like to do this manually or will be using new audio files.
+Use this to skip audio conversion, for manual or new audio file usage.
 
 **-logFolder [MANDATORY]**  
-Specify the location to output the log transcript to. Made mandatory to ensure the user has the ability to check what happened during the build.
+Location to output the log transcript. Mandatory for reviewing build process details.
 
-## Import-NasCQ
+## Import-NasCQ Function
+
+This function is for building Teams Call Queues along with associated Resource Accounts and Account Associations.
+
 ### Parameters
+
 **-CQData**  
-Must be specified as the Excel workbook used to build the call queues and resource accounts.
+Excel workbook specifying Call Queue data and configuration.
 
 **-InstallModules**  
-Specify if you wish to be prompted to install required modules
+Prompt to install required modules if needed.
 
 **-NoCreateCQ**  
-Specify if you wish to exclude call queue creation
+Exclude call queue creation.
 
 **-NoRA**  
-Specify if you wish to exclude resource account creation.
+Exclude resource account creation.
 
 **-NoBackup**  
-Specify if you wish to exclude the backup process. (Useful for Greenfield sites without any existing Call Queues)
+Exclude backup process. Useful for new setups without existing Call Queues.
 
 **-logFolder [MANDATORY]**  
-Specify the location to output the log transcript to. Made mandatory to ensure the user has the ability to check what happened during the build.
+Location to output the log transcript. Mandatory for reviewing build process details.
 
-## Import-NasAA
+## Import-NasAA Function
+
+This function is for building Teams Auto Attendants along with associated Resource Accounts and Account Associations.
+
 ### Parameters
+
 **-AAData**  
-Must be specified as the Excel workbook used to build the Auto Attendants and resource accounts.
+Excel workbook specifying Auto Attendant data and configuration.
 
 **-InstallModules**  
-Specify if you wish to be prompted to install required modules
+Prompt to install required modules if needed.
 
 **-NoCreateAA**  
-Specify if you wish to exclude Auto Attendant creation
+Exclude Auto Attendant creation.
 
 **-NoRA**  
-Specify if you wish to exclude resource account creation.
+Exclude resource account creation.
 
 **-NoBackup**  
-Specify if you wish to exclude the backup process. (Useful for Greenfield sites without any existing Auto Attendants)
+Exclude backup process. Useful for new setups without existing Auto Attendants.
 
 **-logFolder [MANDATORY]**  
-Specify the location to output the log transcript to. Made mandatory to ensure the user has the ability to check what happened during the build.
-
+Location to output the log transcript. Mandatory for reviewing build process details.
