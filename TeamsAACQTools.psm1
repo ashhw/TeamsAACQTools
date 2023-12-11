@@ -278,7 +278,7 @@ function Remove-StringSpecialCharacter {
             }
         }
         catch {
-            $PSCmdlet.ThrowTerminatingError($_)
+            $PSCmdlet.ThrowTerminatingError($x)
         }
     } #PROCESS
 }
@@ -3524,11 +3524,111 @@ function Import-NasM365Group {
     
     [CmdletBinding()]
     param(
-        [Parameter()]
-        $P1,
+        # Call Queue data import
+        [Parameter(Mandatory=$true,ValueFromPipeline)]
+        [String]$CQData,
 
-        [Parameter()]
-        $P2
+        #Root folder used for log file purposes
+        [Parameter(Mandatory=$true)]
+        $logFolder
     )
+
+
+    #Define Transcript Log Files 
+    $logfile = (Get-Date).tostring("yyyyMMdd-hhmmss")
+    $transcriptfile = (New-Item -itemtype File -Path "$logfolder" -Name ("Import-NasM365Group-$logfile" + ".log"))
+    Start-Transcript -Path $transcriptfile
+    Write-Host "Transcript logging started $($transcriptfile)"
+
+    $errorStringPrefix = "[ERROR]"
+    $InfoStringPrefix = "[INFO]"
+
+    Write-Host "`n----------------------------------------------------------------------------------------------
+    `n TeamsAACQTools - Ash Ward - Nasstar
+    `n----------------------------------------------------------------------------------------------" -ForegroundColor Yellow
+
+    #Interactive - InstallModules specified, guide the user through the module installation
+    if($InstallModules){
+        Write-Verbose "$InfoStringPrefix Checking required modules are installed."
+
+        #Check if the ExchangeOnlineManagement module is installed
+        if (Get-InstalledModule -Name ExchangeOnlineManagement) {
+            Write-Verbose "$InfoStringPrefix ExchangeOnlineManagement module exists, proceeding."
+        } else {
+            Write-Error "$errorStringPrefix ExchangeOnlineManagement module does not exist"
+            Write-Host "To continue a module is required, would you like to install the ExchangeOnlineManagement module?"
+            $Answer = Read-Host "Enter Y or N"
+            if($Answer -eq 'Y'){
+                Write-Host "Install-Module ExchangeOnlineManagement"
+            }
+            if($Answer -eq 'N'){
+                Write-Verbose "$InfoStringPrefix Function stopped due to ExchangeOnlineManagement module requirement."
+                break
+            }
+        }
+    }
+
+    # Non-Interactive - Check ExchangeOnlineManagement module is installed
+    Confirm-InstalledModule -Module ExchangeOnlineManagement -moduleName "ExchangeOnlineManagement module"
     
+    #Check we are connected to ExchangeOnlineManagement, if not, prompt user to connect
+    #Write-Verbose "Checking if there is an existing ExchangeOnlineManagement PowerShell session"
+    #if(!(Get-UnifiedGroup -ErrorAction SilentlyContinue)){
+    #    throw "No existing ExchangeOnlineManagement PowerShell sesssion, please run ""Connect-ExchangeOnline"" to connect to the Teams"
+    #}else{
+    #    Write-Host "`nChecking ExchangeOnlineManagement PowerShell session..." -NoNewline
+    #    Write-Host " CONNECTED" -ForegroundColor Green
+    #}
+
+    Write-Verbose "$InfoStringPrefix Importing the Excel data from $CQData"
+    
+    #Import the Call Queue data from the Excel file
+    $CQDataImport = Import-Excel -Path $CQData -WorksheetName "Call Queues"
+
+    foreach($x in $CQDataImport) {
+        #Grab domain from Resource Account UPN
+        $NasM365GroupDomain = "@" + $x.ResourceAccountUPN.split('@')[1]
+        
+        #Clean call queue name for first part of M365 group email address
+        $NasM365GroupAliasCleaned = Remove-StringSpecialCharacter -String $x.CallQueueName
+
+        if((Get-UnifiedGroup -ErrorAction SilentlyContinue).where({$_.DisplayName -eq $NasM365GroupAliasCleaned})){
+            Write-Verbose "Group $NasM365GroupAliasCleaned exists, skipping to next group."
+        }else {
+            Write-Verbose "Group $NasM365GroupAliasCleaned doesn't exist, begin building."
+            $NasM365GroupName = $NasM365GroupAliasCleaned
+            $NasM365GroupEmailAddress = "$NasM365GroupAliasCleaned" + "$NasM365GroupDomain"
+            $NasM365GroupAccessType = "Private"
+
+            if($x.Agents){
+                $agents = $x.Agents.split(",")
+                if(!([string]::isnullorempty($agents))){
+                    $NasM365GroupMembers = $Agents
+                }else{
+                    $agents = $null
+                }
+            }else{
+                Write-Verbose "Cannot find any agents, skipping"
+            }
+
+            $NasM365GroupNotes = "Test group created by PowerShell"
+
+            $M365GroupParameters = @{
+                DisplayName = $NasM365GroupName
+                EmailAddresses = $NasM365GroupEmailAddress
+                AccessType = $NasM365GroupAccessType
+                Members = $NasM365GroupMembers
+                Notes = $NasM365GroupNotes
+            }
+        
+            #Create New Office 365 Group
+            Write-Verbose "Creating M365 Group using DisplayName $($NasM365GroupName)"
+            New-UnifiedGroup @M365GroupParameters
+            }
+    }
+
+    Write-Host "All groups created"
+
+    Stop-Transcript
+
 }

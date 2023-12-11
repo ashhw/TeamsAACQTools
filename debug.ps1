@@ -1,0 +1,1 @@
+Import-NasM365Group -CQData "C:\Test\M365GroupTest\AACQDataImport.xlsx" -logFolder "C:\Test\M365GroupTest\log"
