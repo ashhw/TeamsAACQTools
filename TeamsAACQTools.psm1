@@ -3519,3 +3519,16 @@ function New-NasTeamsResourceAccountAssociation{
     }
 
 }
+
+function Import-NasM365Group {
+    
+    [CmdletBinding()]
+    param(
+        [Parameter()]
+        $P1,
+
+        [Parameter()]
+        $P2
+    )
+    
+}
