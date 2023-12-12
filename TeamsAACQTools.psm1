@@ -3530,9 +3530,12 @@ function Import-NasM365Group {
 
         #Root folder used for log file purposes
         [Parameter(Mandatory=$true)]
-        $logFolder
-    )
+        $logFolder,
 
+        #Specify the group prefix, default is grp
+        [Parameter()]
+        $groupPrefix = "grp"
+    )
 
     #Define Transcript Log Files 
     $logfile = (Get-Date).tostring("yyyyMMdd-hhmmss")
@@ -3572,34 +3575,56 @@ function Import-NasM365Group {
     Confirm-InstalledModule -Module ExchangeOnlineManagement -moduleName "ExchangeOnlineManagement module"
     
     #Check we are connected to ExchangeOnlineManagement, if not, prompt user to connect
-    #Write-Verbose "Checking if there is an existing ExchangeOnlineManagement PowerShell session"
-    #if(!(Get-UnifiedGroup -ErrorAction SilentlyContinue)){
-    #    throw "No existing ExchangeOnlineManagement PowerShell sesssion, please run ""Connect-ExchangeOnline"" to connect to the Teams"
-    #}else{
-    #    Write-Host "`nChecking ExchangeOnlineManagement PowerShell session..." -NoNewline
-    #    Write-Host " CONNECTED" -ForegroundColor Green
-    #}
+    Write-Verbose "$InfoStringPrefix Checking if there is an existing ExchangeOnlineManagement PowerShell session"
+    if(!((Get-ConnectionInformation).where({$_.State -eq "Connected"}))){
+        throw "$errorStringPrefix No existing ExchangeOnlineManagement PowerShell sesssion, please run ""Connect-ExchangeOnline -Device"" to connect to the Exchange Online"
+    }else{
+        Write-Host "Checking ExchangeOnlineManagement PowerShell session..." -NoNewline
+        Write-Host " CONNECTED" -ForegroundColor Green
+    }
 
     Write-Verbose "$InfoStringPrefix Importing the Excel data from $CQData"
     
     #Import the Call Queue data from the Excel file
     $CQDataImport = Import-Excel -Path $CQData -WorksheetName "Call Queues"
 
+    Write-Host "`nBuilding groups..." -NoNewline
+    Write-Host " STARTED" -ForegroundColor Green
+
+    $NasM365GroupPrefix = $groupPrefix
+
     foreach($x in $CQDataImport) {
+
+        #Clear the vars
+        $NasM365GroupDomain = $null
+        $NasM365GroupName = $null
+        $NasM365GroupAliasCleaned = $null
+        $NasM365GroupEmailAddress = $null
+        $NasM365GroupMembers = $null
+        $NasM365GroupNotes = $null
+        $M365GroupParameters = $null
+        $NasM365GroupOutput = $null
+        $agents = $null
+        $NasM365GroupExists = $null
+    
         #Grab domain from Resource Account UPN
         $NasM365GroupDomain = "@" + $x.ResourceAccountUPN.split('@')[1]
         
         #Clean call queue name for first part of M365 group email address
         $NasM365GroupAliasCleaned = Remove-StringSpecialCharacter -String $x.CallQueueName
 
-        if((Get-UnifiedGroup -ErrorAction SilentlyContinue).where({$_.DisplayName -eq $NasM365GroupAliasCleaned})){
-            Write-Verbose "Group $NasM365GroupAliasCleaned exists, skipping to next group."
+        if((Get-UnifiedGroup -ErrorAction SilentlyContinue).where({$_.DisplayName -eq "Group $NasM365GroupAliasCleaned"})){
+            $NasM365GroupExists = $True
+            Write-Verbose "$InfoStringPrefix Group: ""$NasM365GroupPrefix $NasM365GroupAliasCleaned"" exists, skipping to next group."
+            Write-Host "`nChecking Group: $NasM365GroupAliasCleaned has been created..." -NoNewline
+            Write-Host " ALREADY EXISTS" -ForegroundColor Green
         }else {
-            Write-Verbose "Group $NasM365GroupAliasCleaned doesn't exist, begin building."
-            $NasM365GroupName = $NasM365GroupAliasCleaned
-            $NasM365GroupEmailAddress = "$NasM365GroupAliasCleaned" + "$NasM365GroupDomain"
+            Write-Verbose "$InfoStringPrefix Group: ""$NasM365GroupPrefix $NasM365GroupAliasCleaned"" doesn't exist, begin building."
+            $NasM365GroupName = "$NasM365GroupPrefix " + $NasM365GroupAliasCleaned
+            $NasM365GroupEmailAddress = "$NasM365GroupPrefix" + "$NasM365GroupAliasCleaned" + "$NasM365GroupDomain"
             $NasM365GroupAccessType = "Private"
 
+            #Check if there are any agents listed
             if($x.Agents){
                 $agents = $x.Agents.split(",")
                 if(!([string]::isnullorempty($agents))){
@@ -3608,10 +3633,10 @@ function Import-NasM365Group {
                     $agents = $null
                 }
             }else{
-                Write-Verbose "Cannot find any agents, skipping"
+                Write-Verbose "$InfoStringPrefix Cannot find any agents, skipping"
             }
 
-            $NasM365GroupNotes = "Test group created by PowerShell"
+            $NasM365GroupNotes = "Used for: [$NasM365GroupName] in Teams. Created by TeamsAACQTools: $(Get-Date -Format "HH:mm MM-dd-yyyy")"
 
             $M365GroupParameters = @{
                 DisplayName = $NasM365GroupName
@@ -3622,12 +3647,42 @@ function Import-NasM365Group {
             }
         
             #Create New Office 365 Group
-            Write-Verbose "Creating M365 Group using DisplayName $($NasM365GroupName)"
-            New-UnifiedGroup @M365GroupParameters
+            Write-Verbose "$InfoStringPrefix Creating M365 Group using DisplayName $($NasM365GroupName)"
+            Write-Host "Creating Group: $NasM365GroupName..." -NoNewline
+
+            $errorVariable = $null
+
+            try {
+                $NasM365GroupOutput = New-UnifiedGroup @M365GroupParameters -ErrorAction Stop -ErrorVariable errorVariable
+                Write-Host "Group created successfully."
+            }
+            catch {
+                write-host "$(($errorVariable[2]).exception.message)"
+                if ($errorVariable[2].Exception.Message -like "*ProxyAddressExistsException*") {
+                    Write-Host "Group already exists."
+                    # You can take additional actions here if needed.
+                }
+                else {
+                    Write-Error "An error occurred: $($errorVariable[2].Exception.Message)"
+                }
+            }
+            
+            }
+
+            if(!($NasM365GroupExists)){
+                if($NasM365GroupOutput.DisplayName -eq $NasM365GroupName){
+                    Write-Host "Checking Group: $NasM365GroupName has been created..." -NoNewline
+                    Write-Host " CREATED" -ForegroundColor Green
+                }else{
+                    Write-Host "Checking Group: $NasM365GroupName has been created..." -NoNewline
+                    Write-Host " FAILED" -ForegroundColor Red
+                    Write-Error "$errorStringPrefix Check $NasM365GroupName "    
+                }
+            }else{
             }
     }
 
-    Write-Host "All groups created"
+    Write-Host "All groups have been created successfully."
 
     Stop-Transcript
 
