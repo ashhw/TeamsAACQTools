@@ -3532,6 +3532,9 @@ function Import-NasM365Group {
         [Parameter(Mandatory=$true)]
         $logFolder,
 
+        #Give the user the option to install the required modules
+        [switch]$InstallModules,
+
         #Specify the group prefix, default is grp
         [Parameter()]
         $groupPrefix = "grp"

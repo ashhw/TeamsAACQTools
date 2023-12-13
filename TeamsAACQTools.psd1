@@ -51,7 +51,7 @@ Copyright = '(c) Ash Ward. All rights reserved.'
 # ProcessorArchitecture = ''
 
 # Modules that must be imported into the global environment prior to importing this module
-RequiredModules = @('ImportExcel','MicrosoftTeams')
+RequiredModules = @('ImportExcel','MicrosoftTeams','ExchangeOnlineManagement')
 
 # Assemblies that must be loaded prior to importing this module
 # RequiredAssemblies = @()
