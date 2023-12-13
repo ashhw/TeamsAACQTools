@@ -3613,10 +3613,10 @@ function Import-NasM365Group {
         #Clean call queue name for first part of M365 group email address
         $NasM365GroupAliasCleaned = Remove-StringSpecialCharacter -String $x.CallQueueName
 
-        if((Get-UnifiedGroup -ErrorAction SilentlyContinue).where({$_.DisplayName -eq "Group $NasM365GroupAliasCleaned"})){
+        if((Get-UnifiedGroup -ErrorAction SilentlyContinue).where({$_.DisplayName -eq "$NasM365GroupPrefix $NasM365GroupAliasCleaned"})){
             $NasM365GroupExists = $True
             Write-Verbose "$InfoStringPrefix Group: ""$NasM365GroupPrefix $NasM365GroupAliasCleaned"" exists, skipping to next group."
-            Write-Host "`nChecking Group: $NasM365GroupAliasCleaned has been created..." -NoNewline
+            Write-Host "`nChecking Group: $NasM365GroupPrefix $NasM365GroupAliasCleaned has been created..." -NoNewline
             Write-Host " ALREADY EXISTS" -ForegroundColor Green
         }else {
             Write-Verbose "$InfoStringPrefix Group: ""$NasM365GroupPrefix $NasM365GroupAliasCleaned"" doesn't exist, begin building."
@@ -3648,26 +3648,17 @@ function Import-NasM365Group {
         
             #Create New Office 365 Group
             Write-Verbose "$InfoStringPrefix Creating M365 Group using DisplayName $($NasM365GroupName)"
-            Write-Host "Creating Group: $NasM365GroupName..." -NoNewline
-
-            $errorVariable = $null
+            Write-Host "`nCreating Group: $NasM365GroupName..."
 
             try {
-                $NasM365GroupOutput = New-UnifiedGroup @M365GroupParameters -ErrorAction Stop -ErrorVariable errorVariable
-                Write-Host "Group created successfully."
+                $NasM365GroupOutput = New-UnifiedGroup @M365GroupParameters
+                Write-Verbose "$InfoStringPrefixGroup ""$NasM365GroupName"" created successfully without errors."
             }
             catch {
-                write-host "$(($errorVariable[2]).exception.message)"
-                if ($errorVariable[2].Exception.Message -like "*ProxyAddressExistsException*") {
-                    Write-Host "Group already exists."
-                    # You can take additional actions here if needed.
-                }
-                else {
-                    Write-Error "An error occurred: $($errorVariable[2].Exception.Message)"
-                }
+                Write-Error "$errorStringPrefix Unknown Error, check error message - $($_.Exception.Message)"
             }
             
-            }
+        }
 
             if(!($NasM365GroupExists)){
                 if($NasM365GroupOutput.DisplayName -eq $NasM365GroupName){
@@ -3678,11 +3669,10 @@ function Import-NasM365Group {
                     Write-Host " FAILED" -ForegroundColor Red
                     Write-Error "$errorStringPrefix Check $NasM365GroupName "    
                 }
-            }else{
             }
     }
 
-    Write-Host "All groups have been created successfully."
+    Write-Host "`nAll groups have been created successfully."
 
     Stop-Transcript
 
