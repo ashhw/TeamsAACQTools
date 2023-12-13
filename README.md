@@ -20,7 +20,8 @@ Streamline the process of building Auto Attendants, Call Queues, and Resource Ac
 Ensure the following prerequisites are met before using the TeamsAACQTools PowerShell Module:
 1. Install the ImportExcel module: Run as Administrator in PowerShell: `Install-Module ImportExcel`
 2. Install the MicrosoftTeams Module: Run as Administrator in PowerShell: `Install-Module MicrosoftTeams`
-3. Download ffmpeg: Choose your OS and download from [here](https://www.ffmpeg.org/download.html). Copy it to a chosen location, e.g., "C:\ffmpeg".
+3. Install the ExchangeOnlineManagement Module: Run as Administrator in PowerShell `Install-Module ExchangeOnlineManagement`
+4. Download ffmpeg: Choose your OS and download from [here](https://www.ffmpeg.org/download.html). Copy it to a chosen location, e.g., "C:\ffmpeg".
 
 **Note:** You can also use the `-InstallModules` switch for an interactive installation of required modules. Avoid using this in automation scenarios.
 
